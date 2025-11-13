@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Load Packages
+## 0.1 Load packages
 
 ```{r}
 library(cmdstanr)
@@ -24,7 +24,7 @@ set.seed(123)
 
 ```
 
-## Load data
+## 0.2 Load data
 ```{r}
 final_plot_data <- read.csv("tree_plot_data_final_carbon.csv")
 final_plot_data <- final_plot_data %>% 
@@ -42,7 +42,7 @@ ggplot(gather(selected_corr_data), aes(value)) +
 #final_plot_data[,c("sdi", "tph")] <- scale(final_plot_data[,c("sdi", "tph")])
 ```
 
-## Model by ownership
+## 1.1.1 By ownership, no random effect on forest type
 ```{r}
 i = 1
 
@@ -54,29 +54,59 @@ final_plot_data_subset <- final_plot_data %>%
 # Specify model
 mod1 = alist(
   cpa ~ dnorm(mu, sigma),
-  log(mu) <- beta1 + alpha[fortypcd] + beta_qmd*qmd + beta_baph*baph + beta_tph*tph + beta_dia*mean_dia + 
+  mu <- beta1  + beta_qmd*qmd + beta_baph*baph + beta_tph*tph + beta_dia*mean_dia + #+ alpha[fortypcd]
     beta_ht*mean_actualht + beta_HD*mean_HD + beta_slope*slope + beta_aspect*aspect + beta_sdi*sdi,
   beta1 ~ dnorm(4, 4),
   sigma ~ dhalfnorm(0,1),
-  alpha[fortypcd] ~ dnorm(0, sigma_ft),
-  c(beta_qmd, beta_baph, beta_tph, beta_dia, beta_dia, beta_ht, beta_HD, beta_slope, beta_aspect, beta_sdi) ~ dnorm(0, 10),
-  sigma_ft ~ dhalfnorm(0, 1)
+  #alpha[fortypcd] ~ dnorm(0, sigma_ft),
+  c(beta_qmd, beta_baph, beta_tph, beta_dia, beta_dia, beta_ht, beta_HD, beta_slope, beta_aspect, beta_sdi) ~ dnorm(0, 10)
+  #sigma_ft ~ dhalfnorm(0, 1)
 )
 
 # Fit with ulam
-stan_data = final_plot_data_subset[, c("fortypcd", "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+stan_data = final_plot_data_subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] #"fortypcd",
 mod1_fit = ulam(mod1, data=stan_data, iter=2000,
                 warmup=500, chains=4, cores=4, log_lik=TRUE)
-
-precis(mod1_fit, depth=2)
 ```
 
-## Model testing
+### Performance stats
+```{r}
+precis(mod1_fit, depth=2)
+psis = PSIS(mod1_fit, depth = 2)
+# mod1_psis = PSIS(mod1_fit, depth = 2, pointwise = T)
+psis
+
+waic = WAIC(mod1_fit, depth = 2)
+waic
+
+pred = link(mod1_fit, n = 10000)
+mean_pred1 = colMeans(pred)
+resid = final_plot_data_subset$cpa - mean_pred1
+all_resid = t(final_plot_data_subset$cpa - t(pred))
+resid_var = apply(all_resid, 1, var)
+mean_var =  apply(pred, 1, var)
+R2 = mean_var / (mean_var + resid_var)
+
+median(R2)
+
+ggplot() + geom_histogram(aes(x=R2)) + 
+		   geom_vline(aes(xintercept=median(R2)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+
+ggsave("bayesian_r2.pdf", width=4, height=3)
+```
+## 1.1.2 Looped over ownership
 
 ```{r}
 
-testing_data = final_plot_data_subset[1:10,]
-mod1 = alist(
+```
+
+## 1.2 By ownership, w random effect
+
+```{r}
+testing_data = final_plot_data_subset
+testing_data$fortypcd = coerce_index(as.factor(testing_data$fortypcd))
+mod2 = alist(
   cpa ~ dnorm(mu, sigma),
   mu <- beta1 + alpha[fortypcd] + beta_qmd*qmd + beta_baph*baph, #+ beta_tph*tph + beta_dia*mean_dia + beta_ht*mean_actualht + beta_HD*mean_HD + beta_slope*slope + beta_aspect*aspect + beta_sdi+sdi
   sigma ~ dexp(1),
@@ -88,8 +118,15 @@ mod1 = alist(
 
 # Fit with ulam
 stan_data = testing_data[, c("fortypcd", "cpa", "qmd", "baph")] #, "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
-mod1_fit = ulam(mod1, data=stan_data, iter=2000,
+mod2_fit = ulam(mod2, data=stan_data, iter=2000,
                 warmup=500, chains=4, cores=4, log_lik=TRUE)
 
-precis(mod1_fit, depth=2)
+precis(mod2_fit, depth=2)
 ```
+
+
+## 2.1 Global model, no random effect
+
+## 2.2 Global model, w random effect
+
+## 3.1 Model comparisons
