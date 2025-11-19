@@ -21,7 +21,7 @@ library(data.table)
 library(patchwork)
 library(tidyr)
 set.seed(123)
-
+no_cores <- detectCores() - 3
 ```
 
 ## 0.2 Load data
@@ -44,7 +44,7 @@ ggplot(gather(selected_corr_data), aes(value)) +
 
 ## 1.1.1 By ownership, no random effect on forest type
 ```{r}
-i = 1
+i = 2
 
 final_plot_data_subset <- final_plot_data %>% 
   filter(ownership == ownership_index[i])
@@ -65,8 +65,8 @@ mod1 = alist(
 
 # Fit with ulam
 stan_data = final_plot_data_subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] #"fortypcd",
-mod1_fit = ulam(mod1, data=stan_data, iter=2000,
-                warmup=500, chains=4, cores=4, log_lik=TRUE)
+mod1_fit = ulam(mod1, data=stan_data, iter=10000,
+                warmup=1500, chains=5, cores=no_cores, log_lik=TRUE, max_treedepth=20)
 ```
 
 ### Performance stats
