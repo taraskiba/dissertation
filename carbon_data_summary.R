@@ -34,7 +34,7 @@ final_plot_data <- final_plot_data %>%
   filter(ownership != "New River Gorge")
 ownership_index <- unique(final_plot_data$ownership) 
 
-# histogram from stand data
+
 selected_variables <- c("cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "diversity", "slope", "aspect", "sdi")
 selected_corr_data <- final_plot_data[,selected_variables]
 
@@ -79,64 +79,33 @@ beta = 1000
 
 i = 8
 
-## Daymet dataset ####
-daymet <- as.data.frame(read.csv("nasa_ornl_daymet_v4-19800101-19980101.csv"))
+# Daymet dataset
+daymet <- as.data.frame(read.csv("NASA_ORNL_DAYMET_V4-19800101-19980101.csv"))
 daymet <- daymet[,-c(1,3:4)]
 daymet <- unique(daymet)
 daymet <- daymet %>%
-  group_by(plot_id) %>%
-  dplyr::summarise_all(.funs = c(~quantile(., probs = 0.5)),
-                       na.rm = T)
-
-# full dataset w environmental and stand data
-env_data <- final_plot_data
-env_data$plot_ID <- paste(env_data$STATECD, 
-                          env_data$COUNTYCD, 
-                          env_data$PLOT, 
-                          #tree_data$SUBP, 
-                          #tree_data$CONDID, 
-                          #tree_data$TREE,
-                          sep = "_")
-# plot_env <- as.data.frame(env_data$plot_ID)
-# plot_daymet <- as.data.frame(daymet$plot_ID)
-env_data <- right_join(env_data, daymet, by = "plot_ID")
-### SCALE VARIABLES (ENV + STAND)  ####
-env_scaled <- env_data
-stand_daymet_variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "diversity", "tph", "slope", "aspect", "sdi", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
-env_scaled[stand_daymet_variables] <- scale(env_scaled[, stand_daymet_variables])
-
-
-## Terraclimate ####
-#terraclimate <- read.csv("IDAHO_EPSCOR_TERRACLIMATE.csv")
-#terraclimate <- terraclimate[,-c(17,19)]
-
-## WORLDCLIM_V1_BIO ####
-
-worldclim <- as.data.frame(read.csv("WORLDCLIM_V1_BIO.csv"))
-worldclim <- worldclim[,-c(20:22, 24)]
-worldclim <- unique(worldclim)
-worldclim <- worldclim %>%
   group_by(plot_ID) %>%
   dplyr::summarise_all(.funs = c(~quantile(., probs = 0.5)),
                        na.rm = T)
-
+#terraclimate <- read.csv("IDAHO_EPSCOR_TERRACLIMATE.csv")
+#terraclimate <- terraclimate[,-c(17,19)]
 
 # full dataset w environmental and stand data
 env_data <- final_plot_data
 env_data$plot_ID <- paste(env_data$STATECD, 
-                          env_data$COUNTYCD, 
-                          env_data$PLOT, 
-                          #tree_data$SUBP, 
-                          #tree_data$CONDID, 
-                          #tree_data$TREE,
-                          sep = "_")
+                         env_data$COUNTYCD, 
+                         env_data$PLOT, 
+                         #tree_data$SUBP, 
+                         #tree_data$CONDID, 
+                         #tree_data$TREE,
+                         sep = "_")
 # plot_env <- as.data.frame(env_data$plot_ID)
 # plot_daymet <- as.data.frame(daymet$plot_ID)
-env_data <- right_join(env_data, worldclim, by = "plot_ID")
+env_data <- right_join(env_data, daymet, by = "plot_ID")
 # SCALE VARIABLES (ENV + STAND)  ####
 env_scaled <- env_data
-env_variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
-
+stand_daymet_variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "diversity", "tph", "slope", "aspect", "sdi", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
+env_scaled[stand_daymet_variables] <- scale(env_scaled[, stand_daymet_variables])
 
 ### subset data if needed 
 
@@ -144,11 +113,10 @@ env_final_plot_data_subset <- env_data %>%
   filter(ownership == ownership_index[i])
 unique(env_final_plot_data_subset$ownership)
 
-# ENV VAR ####
 ### LMER ONLY ####
 Env_stats <- data.frame()
 env_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
-  foreach(i= 1:length(ownership_index))%dopar% {
+   foreach(i= 1:length(ownership_index))%dopar% {
     
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
@@ -162,12 +130,7 @@ env_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "r
     boot_data_test <- anti_join(final_plot_data_subset, boot_data)
     
     # Run model
-    # daymet 
-    #mixed_model_1 <- lmer(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + (1|fortypcd), data = boot_data) 
-    
-    # worldclim
-    mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ (1|fortypcd), data = boot_data)
-    
+    mixed_model_1 <- lmer(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + (1|fortypcd), data = boot_data) 
     boot_data$residuals <- resid(mixed_model_1)
     
     model.summary <- summary(mixed_model_1)
@@ -187,10 +150,7 @@ env_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "r
     
     # prepare the data for ranger
     # Daymet
-    #variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
-    
-    # World Clim
-    variables <- colnames(worldclim[,-1])
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
     
     env_data_test <- boot_data_test[, variables]
     env_data_test$cpa <- boot_data_test$cpa
@@ -206,17 +166,15 @@ env_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "r
     names(rmse_test) <- "rmse_test"
     r2_test <- 1 - (sum((env_data_test$cpa-predicted_mm_test)^2)/sum((env_data_test$cpa-mean(predicted_mm_test))^2))
     names(r2_test) <- "r2_test"
-    aic <- AIC(mixed_model_1)
-    names(aic) <- "AIC"
     
     
-    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, aic, random.stddev)
+    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, random.stddev)
     stat$ownership <- ownership_index[i]
     #stat <- cbind(stat, model.coef)
-    
+  
     return(stat)
     
-  }
+}
 
 
 env_model1 <- do.call(rbind, env_model)
@@ -253,15 +211,12 @@ env_RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4",
     boot_data_test <- anti_join(final_plot_data_subset, boot_data)
     
     # Define the control for cross-validation
-    mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+    mixed_model_1 <- lmer(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
     # Extract residuals
     boot_data$residuals <- resid(mixed_model_1)
     
     # Prepare the data for ranger
-    # Daymet
-    #variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
-    # World Clim
-    variables <- colnames(worldclim[,-1])
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
     
     rf_data <- boot_data[, variables]
     rf_data$residuals <- boot_data$residuals
@@ -342,20 +297,20 @@ print(env_RF_stats)
 
 lasso_env_stats <- data.frame()
 
-lasso_env_MODEL <- foreach(1:20, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "ranger", "dplyr")) %:%
+lasso_env_MODEL <- foreach(1:2, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "ranger", "dplyr")) %:%
   foreach(i= 1:length(ownership_index))%dopar% {
     
     final_plot_data_subset <- env_scaled %>% 
       filter(ownership == ownership_index[i])
     
-    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", colnames(worldclim[,-1]))
+    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
     final_plot_data_subset <- final_plot_data_subset[, columns]
-    variables <- colnames(worldclim[,-1])
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
     
     ## center all metric variables so that also the 
     ## starting values with glmmPQL are in the correct scaling
-    final_plot_data_subset[, variables] <- scale(final_plot_data_subset[, variables], center=T, scale=T)
-    final_plot_data_subset <- data.frame(final_plot_data_subset)
+    #final_plot_data_subset[, variables] <- scale(final_plot_data_subset[, variables], center=T, scale=T)
+    #final_plot_data_subset <- data.frame(final_plot_data_subset)
     
     plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
     smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
@@ -382,7 +337,7 @@ lasso_env_MODEL <- foreach(1:20, .errorhandling = 'remove', .packages = c("MASS"
     ## first fit good starting model
     PQL <- glmmPQL(cpa~1,random = ~1|fortypcd,family=family,data=boot_data)
     
-    Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,19),as.numeric(t(PQL$coef$random$fortypcd)))))
+    Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,9),as.numeric(t(PQL$coef$random$fortypcd)))))
     Q.start <- as.numeric(VarCorr(PQL)[1,1])
     
     
@@ -408,7 +363,7 @@ lasso_env_MODEL <- foreach(1:20, .errorhandling = 'remove', .packages = c("MASS"
       {
         #print(paste("Lambda Iteration ", j,sep=""))
         
-        glm4 <- try(glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19, rnd = list(fortypcd=~1),  
+        glm4 <- try(glmmLasso(cpa ~  dayl + prcp + srad + swe + tmax + tmin + vp, rnd = list(fortypcd=~1),  
                               family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
                               control=list(start=Delta.temp[l,],q_start=Q.temp[l]))
                     ,silent=TRUE) 
@@ -429,7 +384,7 @@ lasso_env_MODEL <- foreach(1:20, .errorhandling = 'remove', .packages = c("MASS"
     ## now fit full model until optimal lambda (which is at opt4)
     for(o in 1:opt4)
     {  
-      glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19, rnd = list(fortypcd=~1),  
+      glm4.big <- glmmLasso(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp, rnd = list(fortypcd=~1),  
                             family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE,
                             control=list(start=Delta.start[o,],q_start=Q.start[o]))
       Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
@@ -455,6 +410,9 @@ lasso_env_MODEL <- foreach(1:20, .errorhandling = 'remove', .packages = c("MASS"
     r2 <- 1 - (sum((boot_data$cpa-boot_data$predictions)^2)/sum((boot_data$cpa-mean(boot_data$cpa))^2))
     names(r2) <- "r2"
     
+    # prepare the data for ranger
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
+    
     para_data_test <- boot_data_test[, variables]
     para_data_test$cpa <- boot_data_test$cpa
     para_data_test_fortypcd <- para_data_test
@@ -469,13 +427,9 @@ lasso_env_MODEL <- foreach(1:20, .errorhandling = 'remove', .packages = c("MASS"
     names(rmse_test) <- "rmse_test"
     r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
     names(r2_test) <- "r2_test"
-    aic <- glm4_final$aic
-    names(aic) <- "aic"
-    bic <- glm4_final$bic
-    names(bic) <- "bic"
     
     
-    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, aic, bic)
+    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test)
     stat <- cbind(stat, model.coef)
     stat$ownership = ownership_index[i]
     
@@ -699,12 +653,12 @@ i = 8
 
 para_model <-  foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
   foreach(i= 1:length(ownership_index))%dopar% {
-    
+
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
     scaling <- c("dayl", "swe", "vp", "prcp")
     final_plot_data_subset[scaling] <- scale(final_plot_data_subset[scaling])
-    
+  
     plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
     smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
     plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
@@ -723,7 +677,7 @@ para_model <-  foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", 
     
     #prediction
     boot_data$predictions <- predict(mixed_model_1, newdata = boot_data)
-    
+
     # prediction for training dataset
     mb <- as.data.frame(mean(boot_data$cpa - boot_data$predictions, na.rm = TRUE))
     names(mb) <- "mb"
@@ -731,36 +685,34 @@ para_model <-  foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", 
     names(rmse) <- "rmse"
     r2 <- 1 - (sum((boot_data$cpa-boot_data$predictions)^2)/sum((boot_data$cpa-mean(boot_data$cpa))^2))
     names(r2) <- "r2"
-    
+
     # prepare the data for ranger
     variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "aspect", "slope", "sdi")
-    
+
     para_data_test <- boot_data_test[, variables]
     para_data_test$cpa <- boot_data_test$cpa
     para_data_test_fortypcd <- para_data_test
     para_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
-    
+
     # testing dataset: get predictions
     predicted_mm_test <- predict(mixed_model_1, newdata = para_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
-    
+
     mb_test <- as.data.frame(mean(para_data_test$cpa - predicted_mm_test, na.rm = T))
     names(mb_test) <- "mb_test"
     rmse_test <- as.data.frame(sqrt(mean((para_data_test$cpa - predicted_mm_test)^2, na.rm = T)))
     names(rmse_test) <- "rmse_test"
     r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
     names(r2_test) <- "r2_test"
-    aic <- AIC(mixed_model_1)
-    names(aic) <- "AIC"
-    
-    
-    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, aic, random.stddev)
+
+
+    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, random.stddev)
     stat <- cbind(stat, model.coef)
     stat$ownership <- ownership_index[i]
     return(stat)
     
-  }
+}
 
-
+  
 para_model1 <- do.call(rbind, para_model)
 para_model1 <- do.call(rbind, para_model1)
 # Model fit statistics
@@ -769,7 +721,7 @@ para_model_stats <- para_model1  %>%
   dplyr::summarise_all(.funs = c("low"=~quantile(., probs = 0.025),
                                  "med"=~quantile(., probs = 0.5),
                                  "up"=~quantile(., probs = 0.975)),
-                       na.rm = T)
+                         na.rm = T)
 para_model_stats=para_model_stats[,order(colnames(para_model_stats))]
 Para_stats <- rbind(Para_stats, para_model_stats)
 clipr::write_last_clip()
@@ -780,85 +732,85 @@ print(Para_stats)
 RF_stats <- data.frame()
 
 RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
-  foreach(i= 1:length(ownership_index))%dopar% {
-    final_plot_data_subset <- final_plot_data %>% 
-      filter(ownership == ownership_index[i])
-    unique(final_plot_data_subset$ownership)
-    plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
-    smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
-    plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
-    colnames(plot_ind) <- "uniq_spl_unit_id"
+   foreach(i= 1:length(ownership_index))%dopar% {
+     final_plot_data_subset <- final_plot_data %>% 
+       filter(ownership == ownership_index[i])
+     unique(final_plot_data_subset$ownership)
+     plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+     smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+     plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+     colnames(plot_ind) <- "uniq_spl_unit_id"
     
-    boot_data <- inner_join(final_plot_data_subset, plot_ind)
-    boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+     boot_data <- inner_join(final_plot_data_subset, plot_ind)
+     boot_data_test <- anti_join(final_plot_data_subset, boot_data)
     
-    # Define the control for cross-validation
-    mixed_model_1 <- lmer(cpa ~ qmd + baph + mean_dia + mean_actualht + mean_HD  + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
-    # Extract residuals
-    boot_data$residuals <- resid(mixed_model_1)
+     # Define the control for cross-validation
+     mixed_model_1 <- lmer(cpa ~ qmd + baph + mean_dia + mean_actualht + mean_HD  + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+     # Extract residuals
+     boot_data$residuals <- resid(mixed_model_1)
     
-    # Prepare the data for ranger
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
+     # Prepare the data for ranger
+     variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
     
-    rf_data <- boot_data[, variables]
-    rf_data$residuals <- boot_data$residuals
+     rf_data <- boot_data[, variables]
+     rf_data$residuals <- boot_data$residuals
     
-    # Define the control for cross-validation
-    train_control <- trainControl(method = "cv",
+     # Define the control for cross-validation
+     train_control <- trainControl(method = "cv",
                                   number = 5,
                                   verboseIter = TRUE,
                                   returnData = FALSE,
                                   allowParallel = TRUE)
     
-    # Train the random forest model using ranger with cross-validation
-    rf_model <- train(residuals ~ .,
+     # Train the random forest model using ranger with cross-validation
+     rf_model <- train(residuals ~ .,
                       data = rf_data,
                       method = "ranger",
                       trControl = train_control,
                       importance = 'permutation')
     
-    #Prediction
-    predictions <- predict(mixed_model_1, newdata=boot_data)
-    predictions_rf <- predict(rf_model, newdata = rf_data)
-    rf_data$final_predictions <- predictions + predictions_rf
-    rf_data$cpa <- boot_data$cpa
+     #Prediction
+     predictions <- predict(mixed_model_1, newdata=boot_data)
+     predictions_rf <- predict(rf_model, newdata = rf_data)
+     rf_data$final_predictions <- predictions + predictions_rf
+     rf_data$cpa <- boot_data$cpa
     
-    # # Extract variable importance - no longer works since it's just on residuals from lme?
-    # importance_matrix <- as.data.frame(varImp(rf_model)$importance)
-    # importance_matrix <- data.frame(Feature = rownames(importance_matrix), Importance = importance_matrix[, 1])
-    # importance_matrix$rank <- rank(-importance_matrix$Importance)
+     # # Extract variable importance - no longer works since it's just on residuals from lme?
+     # importance_matrix <- as.data.frame(varImp(rf_model)$importance)
+     # importance_matrix <- data.frame(Feature = rownames(importance_matrix), Importance = importance_matrix[, 1])
+     # importance_matrix$rank <- rank(-importance_matrix$Importance)
     
-    # Prediction for training dataset
-    mb <- as.data.frame(mean(rf_data$cpa - rf_data$final_predictions, na.rm = T))
-    names(mb) <- "mb"
-    rmse <- as.data.frame(sqrt(mean((rf_data$cpa - rf_data$final_predictions)^2, na.rm = T)))
-    names(rmse) <- "rmse"
-    R2 <- 1 - (sum((rf_data$cpa-rf_data$final_predictions)^2)/sum((rf_data$cpa-mean(rf_data$cpa))^2))
-    names(R2) <- "R2"
+     # Prediction for training dataset
+     mb <- as.data.frame(mean(rf_data$cpa - rf_data$final_predictions, na.rm = T))
+     names(mb) <- "mb"
+     rmse <- as.data.frame(sqrt(mean((rf_data$cpa - rf_data$final_predictions)^2, na.rm = T)))
+     names(rmse) <- "rmse"
+     R2 <- 1 - (sum((rf_data$cpa-rf_data$final_predictions)^2)/sum((rf_data$cpa-mean(rf_data$cpa))^2))
+     names(R2) <- "R2"
     
-    rf_data_test <- boot_data_test[, variables]
-    rf_data_test$cpa <- boot_data_test$cpa
-    rf_data_test_fortypcd <- rf_data_test
-    rf_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
+     rf_data_test <- boot_data_test[, variables]
+     rf_data_test$cpa <- boot_data_test$cpa
+     rf_data_test_fortypcd <- rf_data_test
+     rf_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
     
-    # testing dataset: get predictions
-    predicted_mm_test <- predict(mixed_model_1, newdata = rf_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
-    rf_data_test$residuals <- predicted_mm_test - rf_data_test$cpa # get residuals from lme
-    predicted_rf_test <- predict(rf_model, newdata = rf_data_test) # predictions from RF model using residuals of lme model 
-    rf_data_test$predicted <- predicted_mm_test + predicted_rf_test # sum up two predictions from lme and rf
+     # testing dataset: get predictions
+     predicted_mm_test <- predict(mixed_model_1, newdata = rf_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
+     rf_data_test$residuals <- predicted_mm_test - rf_data_test$cpa # get residuals from lme
+     predicted_rf_test <- predict(rf_model, newdata = rf_data_test) # predictions from RF model using residuals of lme model 
+     rf_data_test$predicted <- predicted_mm_test + predicted_rf_test # sum up two predictions from lme and rf
     
-    mb_test <- as.data.frame(mean(rf_data_test$cpa - rf_data_test$predicted, na.rm = T))
-    names(mb_test) <- "mb_test"
-    rmse_test <- as.data.frame(sqrt(mean((rf_data_test$cpa - rf_data_test$predicted)^2, na.rm = T)))
-    names(rmse_test) <- "rmse_test"
-    R2_test <- 1 - (sum((rf_data_test$cpa-rf_data_test$predicted)^2)/sum((rf_data_test$cpa-mean(rf_data_test$cpa))^2))
-    names(R2_test) <- "R2_test"
+     mb_test <- as.data.frame(mean(rf_data_test$cpa - rf_data_test$predicted, na.rm = T))
+     names(mb_test) <- "mb_test"
+     rmse_test <- as.data.frame(sqrt(mean((rf_data_test$cpa - rf_data_test$predicted)^2, na.rm = T)))
+     names(rmse_test) <- "rmse_test"
+     R2_test <- 1 - (sum((rf_data_test$cpa-rf_data_test$predicted)^2)/sum((rf_data_test$cpa-mean(rf_data_test$cpa))^2))
+     names(R2_test) <- "R2_test"
     
     
-    stat <- cbind(mb, rmse, R2, mb_test, rmse_test, R2_test)
-    stat$ownership <- ownership_index[i]
-    return(stat)
-  }
+     stat <- cbind(mb, rmse, R2, mb_test, rmse_test, R2_test)
+     stat$ownership <- ownership_index[i]
+     return(stat)
+}
 
 RF_MODEL1 <- do.call(rbind, RF_MODEL)
 RF_MODEL1 <- do.call(rbind, RF_MODEL1)
@@ -880,7 +832,7 @@ lasso_stats <- data.frame()
 lasso_stats <- foreach(1:500, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "dplyr")) %:%
   #for(j in 1:beta){
   # print(paste("J Loop ", j ,sep="")) 
-  foreach(i= 1:length(ownership_index) )%dopar% {
+   foreach(i= 1:length(ownership_index) )%dopar% {
     
     final_plot_data_subset <- final_plot_data %>% 
       filter(ownership == ownership_index[i])
@@ -922,7 +874,7 @@ lasso_stats <- foreach(1:500, .errorhandling = 'remove', .packages = c("MASS", "
     
     Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,9),as.numeric(t(PQL$coef$random$fortypcd)))))
     Q.start <- as.numeric(VarCorr(PQL)[1,1])
-    
+
     
     ## loop over the folds  
     for (k in 1:kk)
@@ -1284,68 +1236,66 @@ mixed_Para_stats <- data.frame()
 beta = 1000
 
 
-mixed_para_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
+mixed_para_model <- foreach(1:10, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
   foreach(i= 1:length(ownership_index))%dopar% {
-    
-    final_plot_data_subset <- env_data %>% 
-      filter(ownership == ownership_index[i])
-    
-    plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
-    smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
-    plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
-    colnames(plot_ind) <- "uniq_spl_unit_id"
-    
-    boot_data <- inner_join(final_plot_data_subset, plot_ind)
-    boot_data_test <- anti_join(final_plot_data_subset, boot_data)
-    
-    # Run model
-    mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+
-                            qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
-    boot_data$residuals <- resid(mixed_model_1)
-    
-    model.summary <- summary(mixed_model_1)
-    model.coef <- data.frame(t(model.summary$coefficients[,1]))
-    random.stddev <- sqrt(model.summary$varcor$fortypcd[1])
-    
-    #prediction
-    boot_data$predictions <- predict(mixed_model_1, newdata = boot_data)
-    
-    # prediction for training dataset
-    mb <- as.data.frame(mean(boot_data$cpa - boot_data$predictions, na.rm = TRUE))
-    names(mb) <- "mb"
-    rmse <- as.data.frame(sqrt(mean((boot_data$cpa - boot_data$predictions)^2, na.rm = T)))
-    names(rmse) <- "rmse"
-    r2 <- 1 - (sum((boot_data$cpa-boot_data$predictions)^2)/sum((boot_data$cpa-mean(boot_data$cpa))^2))
-    names(r2) <- "r2"
-    
-    # prepare the data for ranger
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
-    
-    para_data_test <- boot_data_test[, variables]
-    para_data_test$cpa <- boot_data_test$cpa
-    para_data_test_fortypcd <- para_data_test
-    para_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
-    
-    # testing dataset: get predictions
-    predicted_mm_test <- predict(mixed_model_1, newdata = para_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
-    
-    mb_test <- as.data.frame(mean(para_data_test$cpa - predicted_mm_test, na.rm = T))
-    names(mb_test) <- "mb_test"
-    rmse_test <- as.data.frame(sqrt(mean((para_data_test$cpa - predicted_mm_test)^2, na.rm = T)))
-    names(rmse_test) <- "rmse_test"
-    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
-    names(r2_test) <- "r2_test"
-    aic <- AIC(mixed_model_1)
-    names(aic) <- "AIC"
-    
   
-    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, aic, random.stddev)
-    #stat <- cbind(stat, model.coef)
-    stat$ownership <- ownership_index[i]
-    
-    return(stat)
-    
-  }
+  final_plot_data_subset <- env_data %>% 
+    filter(ownership == ownership_index[i])
+  scaling <- c("dayl", "swe", "vp", "prcp")
+  final_plot_data_subset[scaling] <- scale(final_plot_data_subset[scaling])
+  
+  plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+  smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(final_plot_data_subset, plot_ind)
+  boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+  
+  # Run model
+  mixed_model_1 <- lmer(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+  boot_data$residuals <- resid(mixed_model_1)
+  
+  model.summary <- summary(mixed_model_1)
+  model.coef <- data.frame(t(model.summary$coefficients[,1]))
+  random.stddev <- sqrt(model.summary$varcor$fortypcd[1])
+  
+  #prediction
+  boot_data$predictions <- predict(mixed_model_1, newdata = boot_data)
+  
+  # prediction for training dataset
+  mb <- as.data.frame(mean(boot_data$cpa - boot_data$predictions, na.rm = TRUE))
+  names(mb) <- "mb"
+  rmse <- as.data.frame(sqrt(mean((boot_data$cpa - boot_data$predictions)^2, na.rm = T)))
+  names(rmse) <- "rmse"
+  r2 <- 1 - (sum((boot_data$cpa-boot_data$predictions)^2)/sum((boot_data$cpa-mean(boot_data$cpa))^2))
+  names(r2) <- "r2"
+  
+  # prepare the data for ranger
+  variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "aspect", "slope", "sdi")
+  
+  para_data_test <- boot_data_test[, variables]
+  para_data_test$cpa <- boot_data_test$cpa
+  para_data_test_fortypcd <- para_data_test
+  para_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
+  
+  # testing dataset: get predictions
+  predicted_mm_test <- predict(mixed_model_1, newdata = para_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
+  
+  mb_test <- as.data.frame(mean(para_data_test$cpa - predicted_mm_test, na.rm = T))
+  names(mb_test) <- "mb_test"
+  rmse_test <- as.data.frame(sqrt(mean((para_data_test$cpa - predicted_mm_test)^2, na.rm = T)))
+  names(rmse_test) <- "rmse_test"
+  r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
+  names(r2_test) <- "r2_test"
+  
+  stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, random.stddev)
+  stat <- cbind(stat, model.coef)
+  stat$ownership <- ownership_index[i]
+  
+  return(stat)
+  
+}
 
 mixed_para_model1 <- do.call(rbind, mixed_para_model)
 mixed_para_model1 <- do.call(rbind, mixed_para_model1)
@@ -1383,12 +1333,12 @@ RF_MODEL <- foreach(1:5, .errorhandling = 'remove', .packages = c("lme4", "range
     boot_data_test <- anti_join(final_plot_data_subset, boot_data)
     
     # Define the control for cross-validation
-    mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+    mixed_model_1 <- lmer(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
     # Extract residuals
     boot_data$residuals <- resid(mixed_model_1)
     
     # Prepare the data for ranger
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
     
     rf_data <- boot_data[, variables]
     rf_data$residuals <- boot_data$residuals
@@ -1475,9 +1425,9 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
     final_plot_data_subset <- env_scaled %>% 
       filter(ownership == ownership_index[i])
     print(paste("Ownership ", ownership_index[i] ,sep=""))
-    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
+    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "sdi", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect")
     final_plot_data_subset <- final_plot_data_subset[, columns]
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
     
     ## center all metric variables so that also the 
     ## starting values with glmmPQL are in the correct scaling
@@ -1539,11 +1489,11 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
       {
         #print(paste("Lambda Iteration ", j,sep=""))
         print(paste("Check glm4")) 
-        glm4 <- try(glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi, rnd = list(fortypcd=~1),  
+        glm4 <- try(glmmLasso(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi, rnd = list(fortypcd=~1),  
                               family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
                               control=list(start=Delta.temp[l,],q_start=Q.temp[l]))
                     ,silent=TRUE) 
-        
+  
         
         if(!inherits(glm4, "try-error"))
         {  
@@ -1562,7 +1512,7 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
     ## now fit full model until optimal lambda (which is at opt4)
     for(o in 1:opt4)
     {  
-      glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19 + qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),  
+      glm4.big <- glmmLasso(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),  
                             family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE,
                             control=list(start=Delta.start[o,],q_start=Q.start[o]))
       Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
@@ -1589,6 +1539,9 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
     names(rmse) <- "rmse"
     r2 <- 1 - (sum((boot_data$cpa-boot_data$predictions)^2)/sum((boot_data$cpa-mean(boot_data$cpa))^2))
     names(r2) <- "r2"
+    
+    # prepare the data for ranger
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "aspect", "slope", "sdi")
     
     para_data_test <- boot_data_test[, variables]
     para_data_test$cpa <- boot_data_test$cpa
@@ -1638,9 +1591,9 @@ mixed_lasso_RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c
       filter(ownership == ownership_index[i])
     unique(final_plot_data_subset$ownership)
     
-    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
+    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "sdi", "mean_HD", "tph", "slope", "aspect")
     final_plot_data_subset <- final_plot_data_subset[, columns]
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
     final_plot_data_subset_unscaled <- final_plot_data_subset
     ## center all metric variables so that also the 
     ## starting values with glmmPQL are in the correct scaling
@@ -1699,7 +1652,7 @@ mixed_lasso_RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c
       {
         #print(paste("Lambda Iteration ", j,sep=""))
         
-        glm4 <- try(glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi, rnd = list(fortypcd=~1),  
+        glm4 <- try(glmmLasso(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi, rnd = list(fortypcd=~1),  
                               family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
                               control=list(start=Delta.temp[l,],q_start=Q.temp[l]))
                     ,silent=TRUE) 
@@ -1720,7 +1673,7 @@ mixed_lasso_RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c
     ## now fit full model until optimal lambda (which is at opt4)
     for(o in 1:opt4)
     {  
-      glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi, rnd = list(fortypcd=~1),  
+      glm4.big <- glmmLasso(cpa ~ dayl + prcp + srad + swe + tmax + tmin + vp + qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi, rnd = list(fortypcd=~1),  
                             family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE,
                             control=list(start=Delta.start[o,],q_start=Q.start[o]))
       Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
@@ -1738,6 +1691,9 @@ mixed_lasso_RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c
     boot_data_temp$fitted <- predict(glm4_final, boot_data_temp)
     boot_data_temp$residual <- boot_data_temp$cpa - boot_data_temp$fitted
     boot_data$residual <- boot_data_temp$residual
+    
+    # Prepare the data for ranger
+    variables <- c("dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
     
     rf_data <- boot_data[, variables]
     rf_data$residuals <- boot_data$residual
@@ -1820,8 +1776,8 @@ mod_coor <- raw_coord
 mod_coor$plot_ID <- paste(mod_coor$STATECD, 
                           mod_coor$COUNTYCD, 
                           mod_coor$PLOT, 
-                          #selected_coordinates$CONDID,
-                          sep = "_")
+                                      #selected_coordinates$CONDID,
+                                      sep = "_")
 
 fuzzy_coordinates <- read.csv("fuzzy_coordinates.csv") 
 
@@ -1930,4 +1886,5 @@ print(Para_stats)
 
 
 # Lasso ####
+
 
