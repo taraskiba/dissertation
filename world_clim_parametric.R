@@ -137,6 +137,8 @@ env_data <- right_join(env_data, worldclim, by = "plot_ID")
 env_scaled <- env_data
 env_variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
 
+write.csv(env_scaled, "stand_env_data.csv")
+
 
 ### subset data if needed 
 
@@ -1319,8 +1321,7 @@ mixed_para_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lm
     names(r2) <- "r2"
     
     # prepare the data for ranger
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
-    
+    variables <- env_variables
     para_data_test <- boot_data_test[, variables]
     para_data_test$cpa <- boot_data_test$cpa
     para_data_test_fortypcd <- para_data_test
@@ -1388,7 +1389,7 @@ RF_MODEL <- foreach(1:5, .errorhandling = 'remove', .packages = c("lme4", "range
     boot_data$residuals <- resid(mixed_model_1)
     
     # Prepare the data for ranger
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
+    variables <- env_variables
     
     rf_data <- boot_data[, variables]
     rf_data$residuals <- boot_data$residuals
@@ -1477,7 +1478,7 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
     print(paste("Ownership ", ownership_index[i] ,sep=""))
     columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
     final_plot_data_subset <- final_plot_data_subset[, columns]
-    variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
+    variables <- env_variables
     
     ## center all metric variables so that also the 
     ## starting values with glmmPQL are in the correct scaling
@@ -1512,8 +1513,7 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
     
     Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,9),as.numeric(t(PQL$coef$random$fortypcd)))))
     Q.start <- as.numeric(VarCorr(PQL)[1,1])
-    print(paste("Check 1"))
-    
+
     ## loop over the folds  
     for (k in 1:kk)
     {
@@ -1531,8 +1531,6 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
       
       Delta.temp <- Delta.start
       Q.temp <- Q.start
-      
-      print(paste("Check 2"))
       
       ## loop over lambda grid
       for(l in 1:length(lambda))
@@ -1567,8 +1565,6 @@ mixed_lasso_stats <- for(j in 1:beta){#foreach(1:2, .errorhandling = 'remove', .
                             control=list(start=Delta.start[o,],q_start=Q.start[o]))
       Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
       Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
-      
-      print(paste("Check 3"))
     }
     
     glm4_final <- glm4.big

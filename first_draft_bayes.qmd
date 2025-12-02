@@ -1,0 +1,45 @@
+<!-- ---
+title: "*skiba*: A python package and web app to extract point values from Google Earth Engine datasets to complement forest inventories"
+format:
+  html:
+    code-fold: true
+jupyter: python3
+--- -->
+
+<!-- ---
+title: "*skiba*: A python package to retrieve values from Google Earth Engine datasets for coordinates"
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    colorlinks: true
+---  -->
+
+---
+title: "A modern Bayesian approach to predicting live aboveground carbon with traditional forest inventories"
+format:
+  docx:
+    toc: false
+    number-sections: true
+    highlight-style: github
+---
+
+# Introduction
+
+In the past decade, understanding forest carbon dynamics has received increased attention as climate change and its threats have become  a focal point on the international stage. Quantifying the amount of carbon present at any level, whether tree, plot, stand, etc., is not only difficult due to the complex shapes of trees that can make volume estimations highly variable, but also time-consuming to procure the necessary measurements. Nevertheless, quantifying carbon is still a worthwhile ambition as these values can be used in a wide variety of forest studies, including but not limited to forest economics, mast timber producers, and companies and landowners that exchange credits in the carbon marketplaces. 
+
+Due to the exponential increase in computing power available today, new statistical processes have been developed that can be used in a forestry setting to uncover complex relationships and expand our understanding of carbon dynamics that was previously unknown (unable to be teased out?). Machine learning has been ...
+
+Using these models in new regions require local parameter calibration or is limited to using the parameter coefficients from an existing model and fails to include information of the new regions in predictions. Using a bayesian framework when building such models can assist in estimating new regions...
+
+However, with the typical frequentist approach, one can ask the following question: how can these models be applied in to new regions? Could using a Bayesian approach to borrow information from larger inventories help with new predictions? 
+
+# Methods
+
+# Results and Discussion
+
+When comparing the model performance results between the frequentist and Bayesian approaches for predicting live above-ground carbon, both models...
+
+While the LME and Random Forest frequentist approach can take several hours to run with the large dataset used, the Bayesian approach takes longer to compile while also performing worse (?)
+
+# References

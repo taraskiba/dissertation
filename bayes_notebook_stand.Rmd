@@ -1,0 +1,223 @@
+---
+title: "bayes_notebook"
+author: "Tara Skiba"
+date: "2025-11-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Git configuration
+```{R}
+library(usethis)
+use_git_config(user.name = "Tara Skiba", user.email = "tskiba@vols.utk.edu")
+create_github_token()
+```
+
+## 0.1 Load packages
+
+```{r}
+library(cmdstanr)
+library(rethinking)
+library(ggplot2)
+library(dplyr)
+library(readxl)
+library(data.table)
+library(patchwork)
+library(tidyr)
+library(foreach)
+library(doParallel)
+set.seed(123)
+```
+Make clusters
+```{r}
+no_cores <- detectCores() - 3
+cl <- makeCluster(no_cores, type = "PSOCK")
+registerDoParallel(cl)
+```
+
+## 0.2 Load data
+```{r}
+final_plot_data <- read.csv("tree_plot_data_final_carbon.csv")
+final_plot_data <- final_plot_data %>% 
+  filter(ownership != "New River Gorge")
+ownership_index <- unique(final_plot_data$ownership) 
+```
+
+```{r}
+selected_variables <- c("cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")
+selected_corr_data <- final_plot_data[,selected_variables]
+
+hist_data <- selected_corr_data %>% gather() %>% head()
+ggplot(gather(selected_corr_data), aes(value)) + 
+  geom_histogram(bins = 10) + 
+  facet_wrap(~key, scales = 'free_x')
+#final_plot_data[,c("sdi", "tph")] <- scale(final_plot_data[,c("sdi", "tph")])
+```
+
+## 0.3 Spare functions to call
+```{r}
+
+bayesian_rsq = function(mod, obs){
+	# Compute the Bayesian R2 for a model
+
+	pred = link(mod, n=10000)
+	all_resid = t(obs - t(pred))
+	resid_var = apply(all_resid, 1, var)
+	mean_var =  apply(pred, 1, var)
+	R2 = mean_var / (mean_var + resid_var)
+	return(R2)
+
+}
+
+lppd_newdata = function(mod, newdata, n=1e4){
+	# Function to compute lppd on new data
+
+	ll <- sim(mod, data=newdata, ll = TRUE)
+	n <- ncol(ll)
+	ns <- nrow(ll)
+	f <- function(i) log_sum_exp(ll[, i]) - log(ns)
+	lppd <- sapply(1:n, f)
+	return(lppd)
+
+}
+
+```
+
+## 1.1.1 By ownership, no random effect on forest type
+LOGO-CV applied on plot level
+```{r}
+i = 2
+
+final_plot_data_subset <- final_plot_data %>% 
+  filter(ownership == ownership_index[i])
+#final_plot_data_subset[,c("sdi", "tph")] <- scale(final_plot_data_subset[,c("sdi", "tph")])
+# maybe take the log of cpa to not produce negative values? Removed it from the original formula copied from class
+
+plot_IDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+
+cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking"))%dopar%{ #    .errorhandling = 'remove'
+  id = plot_IDs[p]
+  subset = final_plot_data_subset
+  subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] = scale(subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")])
+  
+  boot_data = subset[which(subset$uniq_spl_unit_id != id),]
+  test_data = subset[which(subset$uniq_spl_unit_id == id),]
+  
+  boot_data = boot_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] #"fortypcd",
+  test_data = test_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+
+  # Specify model
+  mod1 = alist(
+    cpa ~ dnorm(mu, sigma),
+    mu <- b0  + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + #+ alpha[fortypcd]
+      b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+    b0 ~ dnorm(0, 10),
+    sigma ~ dexp(1),
+    c(b_qmd, b_baph, b_tph, b_dia, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 10)
+  )
+  
+  
+  boolFalse <- F
+  while(boolFalse == F){
+    tryCatch(
+      {
+        mod1_fit = quap(mod1, data = boot_data, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
+        lppd_cv = as.data.frame(sum(lppd_newdata(mod1_fit, newdata = test_data)))
+        boolFalse <- T
+      }, error=function(e){},finally={}
+    )
+  }
+  
+  names(lppd_cv)="lppd_cv"
+  r2_boot=median(bayesian_rsq(mod1_fit, boot_data$cpa))
+  names(r2_boot)="r2_boot"
+  r2_out=median(bayesian_rsq(mod1_fit, test_data$cpa))
+  names(r2_out)="r2_out"
+  stat=cbind(lppd_cv, r2_boot, r2_out)
+  return(stat)
+}
+cv_list <- do.call(rbind,cross_v)
+mod1_lppd_cv = sum(cv_list$lppd_cv)
+```
+
+### Performance stats
+```{r}
+precis(mod1_fit, depth=2)
+#psis = PSIS(mod1_fit, depth = 2)
+mod1_psis = PSIS(mod1_fit, depth = 2, pointwise = T)
+psis
+
+waic = WAIC(mod1_fit, depth = 2)
+waic
+
+pred = link(mod1_fit, n = 10000)
+mean_pred1 = colMeans(pred)
+resid = final_plot_data_subset$cpa - mean_pred1
+all_resid = t(final_plot_data_subset$cpa - t(pred))
+resid_var = apply(all_resid, 1, var)
+mean_var =  apply(pred, 1, var)
+R2 = mean_var / (mean_var + resid_var)
+
+pred = link(mod1_fit, n = 10000)
+mean_pred1 = colMeans(pred)
+resid = test_data$cpa - mean_pred1
+all_resid = t(test_data$cpa - t(pred))
+resid_var = apply(all_resid, 1, var)
+mean_var =  apply(pred, 1, var)
+R2 = mean_var / (mean_var + resid_var)
+
+pred = link(mod1_fit, n=10000)
+all_resid = t(test_data$cpa - t(pred))
+resid_var = apply(all_resid, 1, var)
+mean_var =  apply(pred, 1, var)
+R2 = mean_var / (mean_var + resid_var)
+
+
+
+median(bayesian_rsq(mod1_fit, boot_data))
+
+median(R2)
+
+ggplot() + geom_histogram(aes(x=R2)) + 
+		   geom_vline(aes(xintercept=median(R2)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+
+ggsave("bayesian_r2.pdf", width=4, height=3)
+```
+## 1.1.2 Looped over ownership
+
+```{r}
+
+```
+
+## 1.2 By ownership, w random effect
+
+```{r}
+testing_data = final_plot_data_subset
+#testing_data$fortypcd = coerce_index(as.factor(testing_data$fortypcd))
+mod2 = alist(
+  cpa ~ dnorm(mu, sigma),
+  mu <- b0 + alpha[fortypcd] + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+  sigma ~ dexp(1),
+  b0 ~ dnorm(0, 10),
+  alpha[location_id] ~ dnorm(0, sigma_loc),
+  c(b_qmd, b_baph, b_tph, b_dia, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 10), #
+  sigma_loc ~ dexp(1)
+)
+
+# Fit with ulam
+stan_data = testing_data[, c("fortypcd", "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+mod2_fit = quap(mod2, data = boot_data, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
+  
+precis(mod2_fit, depth=2)
+```
+
+
+## 2.1 Global model, no random effect
+
+## 2.2 Global model, w random effect
+
+## 3.1 Model comparisons
