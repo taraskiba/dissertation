@@ -104,7 +104,11 @@ env_data <- right_join(env_data, daymet, by = "plot_ID")
 env_scaled <- env_data
 stand_daymet_variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "diversity", "tph", "slope", "aspect", "sdi", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
 env_scaled[stand_daymet_variables] <- scale(env_scaled[, stand_daymet_variables])
+# SCALE VARIABLES (ENV + STAND)  ####
+env_scaled <- env_data
+env_variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
 
+write.csv(env_scaled, "stand_env_data.csv")
 
 ## Terraclimate ####
 #terraclimate <- read.csv("IDAHO_EPSCOR_TERRACLIMATE.csv")
@@ -133,12 +137,6 @@ env_data$plot_ID <- paste(env_data$STATECD,
 # plot_env <- as.data.frame(env_data$plot_ID)
 # plot_daymet <- as.data.frame(daymet$plot_ID)
 env_data <- right_join(env_data, worldclim, by = "plot_ID")
-# SCALE VARIABLES (ENV + STAND)  ####
-env_scaled <- env_data
-env_variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-1]))
-
-write.csv(env_scaled, "stand_env_data.csv")
-
 
 ### subset data if needed 
 
@@ -688,6 +686,7 @@ print(lasso_RF_env_model_stats)
 
 
 # STAND-LEVEL VARIABLES ####
+### - not updated to new variables ####
 ### LMER ONLY #### 
 Para_stats <- data.frame()
 
@@ -879,7 +878,7 @@ print(RF_stats)
 ## LASSO only ####
 lasso_stats <- data.frame()
 
-lasso_stats <- foreach(1:500, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "dplyr")) %:%
+lasso_stats <- foreach(1:beta, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "dplyr")) %:%
   #for(j in 1:beta){
   # print(paste("J Loop ", j ,sep="")) 
   foreach(i= 1:length(ownership_index) )%dopar% {
@@ -1044,11 +1043,12 @@ clipr::write_last_clip()
 print(var_stats_summary)
 
 ## LASSO and RF ####
+# is ready to run! :)
 lasso_RF_stats <- data.frame()
 
 lasso_RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "ranger", "dplyr")) %:%
   foreach(i= 1:length(ownership_index) )%dopar% {
-    
+  
     final_plot_data_subset <- final_plot_data %>% 
       filter(ownership == ownership_index[i])
     unique(final_plot_data_subset$ownership)
@@ -1216,8 +1216,8 @@ lasso_RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c("MASS
     
     
     stat <- cbind(mb, rmse, R2, mb_test, rmse_test, R2_test, random.stddev)
-    stat <- cbind(stat, model.coef)
     stat$ownership = ownership_index[i]
+    stat <- cbind(stat, model.coef)
     return(stat)
     
   }

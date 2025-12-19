@@ -9,13 +9,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Git configuration
-```{R}
-library(usethis)
-use_git_config(user.name = "Tara Skiba", user.email = "tskiba@vols.utk.edu")
-create_github_token()
-```
-
 ## 0.1 Load packages
 
 ```{r}
@@ -55,6 +48,10 @@ ggplot(gather(selected_corr_data), aes(value)) +
   geom_histogram(bins = 10) + 
   facet_wrap(~key, scales = 'free_x')
 #final_plot_data[,c("sdi", "tph")] <- scale(final_plot_data[,c("sdi", "tph")])
+
+obs_count <- final_plot_data %>% 
+  group_by(ownership) %>% 
+  count()
 ```
 
 ## 0.3 Spare functions to call
@@ -72,6 +69,15 @@ bayesian_rsq = function(mod, obs){
 
 }
 
+bayesian_rsq_out = function(mod, obs, new_values){
+  pred = link(mod, data=new_values,  n=10000)
+  all_resid = t(obs - t(pred))
+  resid_var = apply(all_resid, 1, var)
+  mean_var =  apply(pred, 1, var)
+  R2 = mean_var / (mean_var + resid_var)
+  return(R2)
+}
+
 lppd_newdata = function(mod, newdata, n=1e4){
 	# Function to compute lppd on new data
 
@@ -86,37 +92,38 @@ lppd_newdata = function(mod, newdata, n=1e4){
 
 ```
 
-## 1.1.1 By ownership, no random effect on forest type
-LOGO-CV applied on plot level
+## 1.1 LOGO-CV applied on plot level
 ```{r}
-i = 2
+i = 9
 
 final_plot_data_subset <- final_plot_data %>% 
-  filter(ownership == ownership_index[i])
-#final_plot_data_subset[,c("sdi", "tph")] <- scale(final_plot_data_subset[,c("sdi", "tph")])
-# maybe take the log of cpa to not produce negative values? Removed it from the original formula copied from class
+  filter(ownership == ownership_index[i]) %>% 
+  filter(fortypcd < 600 & fortypcd >= 500)
 
 plot_IDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
 
+subset = final_plot_data_subset
+subset$sqrtcpa = sqrt(final_plot_data_subset$cpa)
+
+#subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] = scale(subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")])
+
 cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking"))%dopar%{ #    .errorhandling = 'remove'
   id = plot_IDs[p]
-  subset = final_plot_data_subset
-  subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] = scale(subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")])
   
   boot_data = subset[which(subset$uniq_spl_unit_id != id),]
   test_data = subset[which(subset$uniq_spl_unit_id == id),]
   
-  boot_data = boot_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] #"fortypcd",
-  test_data = test_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+  boot_data = boot_data[, c( "sqrtcpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] #"fortypcd",
+  test_data = test_data[, c( "sqrtcpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
 
   # Specify model
   mod1 = alist(
-    cpa ~ dnorm(mu, sigma),
+    sqrtcpa ~ dnorm(mu, sigma),
     mu <- b0  + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + #+ alpha[fortypcd]
       b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
-    b0 ~ dnorm(0, 10),
+    b0 ~ dnorm(8, 4),
     sigma ~ dexp(1),
-    c(b_qmd, b_baph, b_tph, b_dia, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 10)
+    c(b_qmd, b_baph, b_tph, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 4)
   )
   
   
@@ -124,26 +131,48 @@ cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking"))%dopar%{ 
   while(boolFalse == F){
     tryCatch(
       {
-        mod1_fit = quap(mod1, data = boot_data, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
+        mod1_fit = quap(mod1, data = boot_data) #, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
         lppd_cv = as.data.frame(sum(lppd_newdata(mod1_fit, newdata = test_data)))
         boolFalse <- T
       }, error=function(e){},finally={}
     )
   }
-  
   names(lppd_cv)="lppd_cv"
-  r2_boot=median(bayesian_rsq(mod1_fit, boot_data$cpa))
+  r2_boot=median(bayesian_rsq(mod1_fit, boot_data$sqrtcpa))
   names(r2_boot)="r2_boot"
-  r2_out=median(bayesian_rsq(mod1_fit, test_data$cpa))
+  r2_out=median(bayesian_rsq_out(mod1_fit, obs = test_data$sqrtcpa, new_values = test_data))
   names(r2_out)="r2_out"
   stat=cbind(lppd_cv, r2_boot, r2_out)
   return(stat)
 }
 cv_list <- do.call(rbind,cross_v)
-mod1_lppd_cv = sum(cv_list$lppd_cv)
+median(cv_list$r2_boot)
+ggplot() + geom_histogram(aes(cv_list$r2_boot)) + 
+		   geom_vline(aes(xintercept=median(cv_list$r2_boot)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+median(cv_list$r2_out, na.rm = T)
+ggplot() + geom_histogram(aes(cv_list$r2_out)) + 
+		   geom_vline(aes(xintercept=median(cv_list$r2_out)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+sum(cv_list$lppd_cv)
+
 ```
 
-### Performance stats
+```{r}
+precis(mod1_fit, prob = 0.95)
+r_in <- bayesian_rsq(mod1_fit, boot_data$sqrtcpa)
+r_out <- bayesian_rsq_out(mod1_fit, obs = test_data$sqrtcpa, new_values = test_data)
+
+ggplot() + geom_histogram(aes(x=r_in)) + 
+		   geom_vline(aes(xintercept=median(r_in)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+
+ggplot() + geom_histogram(aes(x=r_out)) + 
+		   geom_vline(aes(xintercept=median(r_out)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+```
+
+
 ```{r}
 precis(mod1_fit, depth=2)
 #psis = PSIS(mod1_fit, depth = 2)
@@ -187,37 +216,468 @@ ggplot() + geom_histogram(aes(x=R2)) +
 
 ggsave("bayesian_r2.pdf", width=4, height=3)
 ```
-## 1.1.2 Looped over ownership
+
+## 1.2 Psuedo-cross validation but with 90/10 split and p-number iterations - psuedo bootstap
+```{r}
+i = 9
+
+final_plot_data_subset <- final_plot_data %>% 
+  filter(ownership == ownership_index[i])%>% 
+  filter(fortypcd < 600 & fortypcd >= 500)
+
+plot_IDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+
+sample <- final_plot_data_subset
+sample$logcpa <- log(sample$cpa)
+sample$sqrtcpa <- (sample$cpa)^0.5
+
+subset = final_plot_data_subset
+#subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] = scale(subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")])
+
+cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking", "dplyr"))%dopar%{ #    .errorhandling = 'remove'
+  id = plot_IDs[p]
+  
+  smp_size <- floor(0.9*length(plot_IDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plot_IDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(sample, plot_ind)
+  boot_data_raw <- boot_data
+  test_data <- anti_join(sample, boot_data)
+  
+  boot_data = boot_data[, c( "sqrtcpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+  test_data = test_data[, c( "sqrtcpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+
+  # Specify model
+  mod1 = alist(
+    sqrtcpa ~ dnorm(mu, sigma),
+    mu <- b0  + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + #+ alpha[fortypcd]
+      b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+    b0 ~ dnorm(10,4),
+    sigma ~ dexp(1),
+    c(b_qmd, b_baph, b_tph, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 3)
+  )
+  
+  
+  boolFalse <- F
+  while(boolFalse == F){
+    tryCatch(
+      {
+        mod1_fit = quap(mod1, data = boot_data) #, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
+        lppd_cv = as.data.frame(sum(lppd_newdata(mod1_fit, newdata = test_data)))
+        names(lppd_cv)="lppd_cv"
+        r2_boot=median(bayesian_rsq(mod1_fit, boot_data$sqrtcpa))
+        names(r2_boot)="r2_boot"
+        r2_out=median(bayesian_rsq_out(mod1_fit, obs = test_data$sqrtcpa, new_values = test_data))
+        names(r2_out)="r2_out"
+        stat=cbind(lppd_cv, r2_boot, r2_out)
+        boolFalse <- T
+      }, error=function(e){},finally={}
+    )
+  }
+  
+
+  return(stat)
+}
+
+cv_list <- do.call(rbind,cross_v)
+median(cv_list$r2_boot)
+ggplot() + geom_histogram(aes(cv_list$r2_boot)) + 
+		   geom_vline(aes(xintercept=median(cv_list$r2_boot)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+median(cv_list$r2_out, na.rm = T)
+ggplot() + geom_histogram(aes(cv_list$r2_out)) + 
+		   geom_vline(aes(xintercept=median(cv_list$r2_out)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+sum(cv_list$lppd_cv, na.rm = T)
+```
 
 ```{r}
+precis(mod1_fit, prob = 0.95)
+r_in <- bayesian_rsq(mod1_fit, boot_data$sqrtcpa)
+r_out <- bayesian_rsq_out(mod1_fit, obs = test_data$sqrtcpa, new_values = test_data)
+
+ggplot() + geom_histogram(aes(x=r_in)) + 
+		   geom_vline(aes(xintercept=median(r_in)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+
+ggplot() + geom_histogram(aes(x=r_out)) + 
+		   geom_vline(aes(xintercept=median(r_out)), linetype="dashed", linewidth=1) +
+		   theme_classic()
+```
+
+## XX Laplace prior - not usable
+```{r}
+i = 2
+
+final_plot_data_subset <- final_plot_data %>% 
+  filter(ownership == ownership_index[i])
+
+plot_IDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+
+cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking"))%dopar%{ #    .errorhandling = 'remove'
+  id = plot_IDs[p]
+  subset = final_plot_data_subset
+  subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] = scale(subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")])
+  
+  boot_data = subset[which(subset$uniq_spl_unit_id != id),]
+  test_data = subset[which(subset$uniq_spl_unit_id == id),]
+  
+  boot_data = boot_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] #"fortypcd",
+  test_data = test_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+
+  # Specify model
+  mod1 = alist(
+    cpa ~ dlaplace(mu, sigma),
+    mu <- b0  + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + #+ alpha[fortypcd]
+      b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+    b0 ~ dlaplace(0, 1),
+    sigma ~ dexp(1),
+    c(b_qmd, b_baph, b_tph, b_dia, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dlaplace(0, 2)
+  )
+  
+  
+  boolFalse <- F
+  while(boolFalse == F){
+    tryCatch(
+      {
+        mod1_fit = quap(mod1, data = boot_data, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
+        lppd_cv = as.data.frame(sum(lppd_newdata(mod1_fit, newdata = test_data)))
+        boolFalse <- T
+      }, error=function(e){},finally={}
+    )
+  }
+  
+  names(lppd_cv)="lppd_cv"
+  r2_boot=median(bayesian_rsq(mod1_fit, boot_data$cpa))
+  names(r2_boot)="r2_boot"
+  r2_out=median(bayesian_rsq(mod1_fit, test_data$cpa))
+  names(r2_out)="r2_out"
+  stat=cbind(lppd_cv, r2_boot, r2_out)
+  return(stat)
+}
+cv_list <- do.call(rbind,cross_v)
+mod1_lppd_cv = sum(cv_list$lppd_cv)
+```
+## 1.2 By ownership, w random effect - no usable 
+
+```{r}
+i = 9
+
+stat1 <- data.frame()
+
+final_plot_data_subset <- final_plot_data %>% 
+  filter(ownership == ownership_index[i])
+
+plot_IDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+
+cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking"))%dopar%{ #    .errorhandling = 'remove'
+  id = plot_IDs[p]
+  subset = final_plot_data_subset
+  # subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] = scale(subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")])
+  
+  boot_data = subset[which(subset$uniq_spl_unit_id != id),]
+  test_data = subset[which(subset$uniq_spl_unit_id == id),]
+  
+  
+  boot_data = boot_data[, c("fortypcd", "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] #"fortypcd",
+  test_data = test_data[, c("fortypcd", "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+
+  mod2 = alist(
+    cpa ~ dnorm(mu, sigma),
+    mu <- b0 + alpha[fortypcd] + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+    sigma ~ dexp(1),
+    b0 ~ dnorm(0, 10),
+    alpha[location_id] ~ dnorm(0, sigma_loc),
+    c(b_qmd, b_baph, b_tph, b_dia, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 10), #
+    sigma_loc ~ dexp(1)
+  )
+  
+  
+  boolFalse <- F
+  while(boolFalse == F){
+    tryCatch(
+      {
+        mod_sample_fit <- quap(mod2, data = boot_data)
+        lppd_cv = sum(lppd_newdata(mod_sample_fit, newdata = test_data))
+        in_samp <- bayesian_rsq(mod_sample_fit, boot_data$sqrtcpa)
+        r_sq <- median(in_samp)
+        r_sq_low <- quantile(in_samp, probs = 0.025)
+        r_sq_high <- quantile(in_samp, probs = 0.975)
+        
+        out_samp <- bayesian_rsq_out(mod_sample_fit, test_data$sqrtcpa, test_data)
+        r_sq_out <- median(out_samp)
+        r_sq_out_low <- quantile(out_samp, probs = 0.025)
+        r_sq_out_high <- quantile(out_samp, probs = 0.975)
+        boolFalse <- T
+      }, error=function(e){}, warning = function(w){}, finally={}
+    )
+  }
+  
+  region <- ownership_index[i]
+  
+  temp <- cbind(region, lppd_cv, r_sq, r_sq_low, r_sq_high, r_sq_out, r_sq_out_low, r_sq_out_high)
+  
+  stat1 <- rbind(stat1, temp)
+}
 
 ```
 
-## 1.2 By ownership, w random effect
+
+
+
+## 2 New approach
+### 2.1 Complete R-sq with logcpa and quap and no random effect
+```{r}
+stat_log = data.frame()
+
+for(i in 1:length(ownership_index)){
+  sample <- final_plot_data %>% 
+    filter(ownership == ownership_index[i]) %>% 
+    filter(fortypcd < 600 & fortypcd >= 500)
+  sample$fortypcd <- as.factor(sample$fortypcd)
+  sample$logcpa <- log(sample$cpa)
+  sample$sqrtcpa <- (sample$cpa)^0.5
+  
+  plotIDs <- unique(sample$uniq_spl_unit_id)
+  smp_size <- floor(0.9*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(sample, plot_ind)
+  test_data <- anti_join(sample, boot_data)
+  
+  mod_sample = alist(
+    logcpa ~ dnorm(mu, sigma),
+    mu <- b0 + b_d*mean_dia + b_ht*mean_actualht + b_tph*tph + b_ba*baph + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+    sigma ~ dexp(.5),
+    b0 ~ dnorm(5, 4),  
+    c(b_d, b_ht, b_tph, b_ba, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 4)
+  )
+  
+  stan_data = boot_data[, c("logcpa", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+  
+  boolFalse <- F
+  while(boolFalse == F){
+    tryCatch(
+      {
+        mod_sample_fit <- quap(mod_sample, data = stan_data)
+        lppd_cv = sum(lppd_newdata(mod1_fit, newdata = test_data))
+        
+        in_samp <- bayesian_rsq(mod_sample_fit, boot_data$logcpa)
+        r_sq <- median(in_samp)
+        r_sq_low <- quantile(in_samp, probs = 0.025)
+        r_sq_high <- quantile(in_samp, probs = 0.975)
+        
+        out_samp <- bayesian_rsq_out(mod_sample_fit, test_data$logcpa, test_data)
+        r_sq_out <- median(out_samp)
+        r_sq_out_low <- quantile(out_samp, probs = 0.025)
+        r_sq_out_high <- quantile(out_samp, probs = 0.975)
+        boolFalse <- T
+      }, error=function(e){}, warning = function(w){}, finally={}
+    )
+  }
+  
+  region <- ownership_index[i]
+  
+  temp <- cbind(region, lppd_cv, r_sq, r_sq_low, r_sq_high, r_sq_out, r_sq_out_low, r_sq_out_high)
+  
+  stat_log <- rbind(stat_log, temp)
+}
+
+```
+
+
+### 2.2 Complete R-sq with sqrtcpa with quap no random effect
+```{r}
+stat_sqrt = data.frame()
+
+for(i in 1:length(ownership_index)){
+  sample <- final_plot_data %>% 
+    filter(ownership == ownership_index[i]) %>% 
+    filter(fortypcd < 600 & fortypcd >= 500)
+  sample$fortypcd <- as.factor(sample$fortypcd)
+  sample$logcpa <- log(sample$cpa)
+  sample$sqrtcpa <- (sample$cpa)^0.5
+  
+  plotIDs <- unique(sample$uniq_spl_unit_id)
+  smp_size <- floor(0.90*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(sample, plot_ind)
+  test_data <- anti_join(sample, boot_data)
+  
+  mod_sample = alist(
+    sqrtcpa ~ dnorm(mu, sigma),
+    mu <- b0 + b_d*mean_dia + b_ht*mean_actualht + b_tph*tph + b_ba*baph + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+    sigma ~ dexp(.5),
+    b0 ~ dnorm(8, 5),  
+    c(b_d, b_ht, b_tph, b_ba, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 4)
+  )
+  
+  stan_data = boot_data[, c("sqrtcpa", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+  
+  boolFalse <- F
+  while(boolFalse == F){
+    tryCatch(
+      {
+        mod_sample_fit <- quap(mod_sample, data = stan_data)
+        lppd_cv = sum(lppd_newdata(mod1_fit, newdata = test_data))
+        
+        in_samp <- bayesian_rsq(mod_sample_fit, boot_data$sqrtcpa)
+        r_sq <- median(in_samp)
+        r_sq_low <- quantile(in_samp, probs = 0.025)
+        r_sq_high <- quantile(in_samp, probs = 0.975)
+        
+        out_samp <- bayesian_rsq_out(mod_sample_fit, test_data$sqrtcpa, test_data)
+        r_sq_out <- median(out_samp)
+        r_sq_out_low <- quantile(out_samp, probs = 0.025)
+        r_sq_out_high <- quantile(out_samp, probs = 0.975)
+        boolFalse <- T
+      }, error=function(e){}, warning = function(w){}, finally={}
+    )
+  }
+  
+  region <- ownership_index[i]
+  
+  temp <- cbind(region, lppd_cv, r_sq, r_sq_low, r_sq_high, r_sq_out, r_sq_out_low, r_sq_out_high)
+  
+  stat_sqrt <- rbind(stat_sqrt, temp)
+}
+```
+
+## 3.0 MCMC fit
 
 ```{r}
-testing_data = final_plot_data_subset
-#testing_data$fortypcd = coerce_index(as.factor(testing_data$fortypcd))
+i=9
+
+sample <- final_plot_data %>% 
+  filter(ownership == ownership_index[i]) %>% 
+  filter(fortypcd < 600 & fortypcd >= 500)
+forest_type = unique(sample$fortypcd)
+sample$fortypcd <- coerce_index(as.factor(sample$fortypcd))
+sample$logcpa <- log(sample$cpa)
+sample$sqrtcpa <- (sample$cpa)^0.5
+
+plotIDs <- unique(sample$uniq_spl_unit_id)
+smp_size <- floor(0.90*length(plotIDs)) # switch to 0.8 for 80/20 split
+plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+colnames(plot_ind) <- "uniq_spl_unit_id"
+
+boot_data <- inner_join(sample, plot_ind)
+boot_data_raw <- boot_data
+test_data <- anti_join(sample, boot_data)
+
+boot_data = boot_data[, c("sqrtcpa", "mean_dia", "mean_actualht", "fortypcd")]
+test_data = test_data[, c("sqrtcpa", "mean_dia", "mean_actualht", "fortypcd")]
+  
 mod2 = alist(
-  cpa ~ dnorm(mu, sigma),
-  mu <- b0 + alpha[fortypcd] + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
-  sigma ~ dexp(1),
-  b0 ~ dnorm(0, 10),
-  alpha[location_id] ~ dnorm(0, sigma_loc),
-  c(b_qmd, b_baph, b_tph, b_dia, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 10), #
-  sigma_loc ~ dexp(1)
+    sqrtcpa ~ dnorm(mu, sigma),
+    mu <- b0 + b_d*mean_dia + b_ht*mean_actualht + alpha[fortypcd],
+    sigma ~ dexp(1),
+    b0 ~ dnorm(10, 4),
+    alpha[fortypcd] ~ dnorm(0, sigma_loc),
+    c(b_d, b_ht) ~ dnorm(0, 4),
+    sigma_loc ~ dexp(1)
+  )
+
+pmod_fit1 = ulam(mod2, data = boot_data, iter = 2000, warmup = 500, chains = 4, cores = 6, log_lik = T)
+
+traceplot(pmod_fit1)
+trankplot(pmod_fit1)
+precis(pmod_fit1)
+precis(pmod_fit1, depth=2, pars=c("alpha"))
+
+post = extract.samples(pmod_fit1)
+alpha_post = post$alpha + as.vector(post$b0) + as.vector(post$b_d) + as.vector(post$b_ht)
+colnames(alpha_post) = paste0("forest_type_", forest_type)
+alpha_dt = reshape2::melt(alpha_post)
+colnames(alpha_dt) = c("id", "fortypcd", "value")
+alpha_dt$valuesq = (alpha_dt$value)
+hist(alpha_dt$valuesq)
+
+ggplot(alpha_dt) + geom_density(aes(x=valuesq, fill=fortypcd)) + theme_classic() +
+				   xlab("Predicted sqrt(C) (sqrt(MgC/HA))")
+```
+
+```{r}
+hist(boot_data_raw$cpa) 
+hist(sqrt(boot_data_raw$cpa))
+hist(sample$cpa) 
+hist(sqrt(sample$cpa)) 
+hist(log(sample$cpa)) 
+```
+
+```{r}
+post_alpha <- post$alpha
+alpha_mean = colMeans(post_alpha)
+qqnorm(alpha_mean)
+qqline(alpha_mean)
+```
+
+```{r}
+postcheck(pmod_fit1)
+```
+
+```{r}
+precis(pmod_fit1, prob = 0.95)
+WAIC(mod1_fit)
+WAIC(pmod_fit1)
+compare(mod1_fit, pmod_fit1, func = WAIC)
+compare(mod1_fit, pmod_fit1, func = PSIS)
+sum(lppd(pmod_fit1))
+PSIS(pmod_fit1, pointwise = T)
+```
+
+```{r}
+mod1_pred = link(pmod_fit1)
+
+mpv =  as.vector(mod1_pred)
+
+post <- extract.samples(pmod_fit1)                # [web:4]
+sigma_draws <- as.vector(post$sigma)
+
+# draw normal predictive samples: one y_rep per (sample, case)
+mod1_pred_counts <- array(
+  rnorm(length(mpv), mean = mpv, sd = rep(sigma_draws, times = ncol(mod1_pred))),
+  dim = dim(mod1_pred)
 )
 
-# Fit with ulam
-stan_data = testing_data[, c("fortypcd", "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
-mod2_fit = quap(mod2, data = boot_data, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
-  
-precis(mod2_fit, depth=2)
+# Compare the observed and predicted distribution of data
+# y : Takes the observed data
+# yrep " Takes in posterior samples of the predicted data
+# This function then compares the two distributions
+p1 <- bayesplot::ppc_dens_overlay(
+  y    = boot_data$sqrtcpa,
+  yrep = mod1_pred_counts[1:500, , drop = FALSE])
+
+p1 + theme_classic() + xlab("sqrt cpa") + ylab("Density")
+#ggsave("obs_pred_predictions_ranef.pdf", width=4, height=3)
 ```
 
+Testing 
+```{r}
+mod1_pred = link(pmod_fit1, data = test_data,  n=10000)
+mpv =  as.vector(mod1_pred)
 
-## 2.1 Global model, no random effect
+post <- extract.samples(pmod_fit1)                # [web:4]
+sigma_draws <- as.vector(post$sigma)
 
-## 2.2 Global model, w random effect
+# draw normal predictive samples: one y_rep per (sample, case)
+mod1_pred_counts <- array(
+  rnorm(length(mpv), mean = mpv, sd = rep(sigma_draws, times = ncol(mod1_pred))),
+  dim = dim(mod1_pred)
+)
 
-## 3.1 Model comparisons
+# Compare the observed and predicted distribution of data
+# y : Takes the observed data
+# yrep " Takes in posterior samples of the predicted data
+# This function then compares the two distributions
+p1 <- bayesplot::ppc_dens_overlay(
+  y    = test_data$sqrtcpa,
+  yrep = mod1_pred_counts[1:500, , drop = FALSE])
+
+p1 + theme_classic() + xlab("sqrt cpa") + ylab("Density")
+#ggsave("obs_pred_predictions_ranef.pdf", width=4, height=3)
+```
