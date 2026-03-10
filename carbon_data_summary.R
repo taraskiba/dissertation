@@ -19,6 +19,12 @@ library(mgcv)
 library(GGally)
 library(tidyr)
 
+beta = 1000 # no. of iterations
+no_cores <- detectCores() - 1
+cl <- makeCluster(no_cores, type = "PSOCK")
+registerDoParallel(cl)
+set.seed(123)
+
 #Complementary file: Data_process_carbon.R
 #Set directory
 #setwd("C:/Users/tara/Desktop/carbon_project_1/")
@@ -48,11 +54,6 @@ plot_var <- c("cpa", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
 #gg_data <- final_plot_data[,plot_var]
 #ggpairs(gg_data)
 
-beta = 1000 # no. of iterations
-no_cores <- detectCores() - 1
-cl <- makeCluster(no_cores, type = "PSOCK")
-registerDoParallel(cl)
-#set.seed(123)
 
 # forest type group####
 # final_plot_data$forest_type_group <- ifelse(final_plot_data$fortypcd >= 100 & final_plot_data$fortypcd < 120,
@@ -74,10 +75,6 @@ registerDoParallel(cl)
 #                                                                                                   "Nonstocked"))))))))
 #### end forest type group ####
 # ENVIRONMENTAL VARIABLES ####
-
-beta = 1000
-
-i = 8
 
 # Daymet dataset
 daymet <- as.data.frame(read.csv("NASA_ORNL_DAYMET_V4-19800101-19980101.csv"))

@@ -36,7 +36,8 @@ registerDoParallel(cl)
 final_plot_data <- read.csv("tree_plot_data_final_carbon.csv")
 final_plot_data <- final_plot_data %>% 
   filter(ownership != "New River Gorge")
-ownership_index <- unique(final_plot_data$ownership) 
+ownership_index <- c("Chattahoochee-Oconee", "Cherokee", "Nantahala", "Pisgah","George Washington-Jefferson", "Daniel Boone","Monongahela","Wayne","Great Smoky Mountains","Shenandoah")
+ 
 ```
 
 ```{r}
@@ -222,8 +223,8 @@ ggsave("bayesian_r2.pdf", width=4, height=3)
 i = 9
 
 final_plot_data_subset <- final_plot_data %>% 
-  filter(ownership == ownership_index[i])%>% 
-  filter(fortypcd < 600 & fortypcd >= 500)
+  filter(ownership == ownership_index[i])# %>% 
+  #filter(fortypcd < 600 & fortypcd >= 500)
 
 plot_IDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
 
@@ -231,11 +232,10 @@ sample <- final_plot_data_subset
 sample$logcpa <- log(sample$cpa)
 sample$sqrtcpa <- (sample$cpa)^0.5
 
-subset = final_plot_data_subset
+#subset = final_plot_data_subset
 #subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")] = scale(subset[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")])
 
-cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking", "dplyr"))%dopar%{ #    .errorhandling = 'remove'
-  id = plot_IDs[p]
+cross_v <- foreach(p = 1:1000, .packages = c("rethinking", "dplyr"))%dopar%{ #    .errorhandling = 'remove'
   
   smp_size <- floor(0.9*length(plot_IDs)) # switch to 0.8 for 80/20 split
   plot_ind <- as.data.frame(sample(plot_IDs, size = smp_size))
@@ -245,19 +245,21 @@ cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking", "dplyr"))
   boot_data_raw <- boot_data
   test_data <- anti_join(sample, boot_data)
   
-  boot_data = boot_data[, c( "sqrtcpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
-  test_data = test_data[, c( "sqrtcpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi")]
+  boot_data = boot_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi", "fortypcd")]
+  test_data = test_data[, c( "cpa", "qmd", "baph", "tph", "mean_dia", "mean_actualht", "mean_HD", "slope", "aspect", "sdi", "fortypcd")]
 
   # Specify model
   mod1 = alist(
-    sqrtcpa ~ dnorm(mu, sigma),
-    mu <- b0  + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + #+ alpha[fortypcd]
-      b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
-    b0 ~ dnorm(10,4),
-    sigma ~ dexp(1),
-    c(b_qmd, b_baph, b_tph, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 3)
+    cpa ~ dnorm(mu, sigma),
+    mu <- b0  + b_qmd*qmd + b_baph*baph + b_tph*tph + b_dia*mean_dia + a[fortypcd] + b_ht*mean_actualht + b_HD*mean_HD + b_slope*slope + b_aspect*aspect + b_sdi*sdi,
+    b0 ~ dnorm(100,20),
+    c(sigma, sigma_r) ~ dexp(1),
+    a[fortypcd] ~ dnorm(0, sigma_r),
+    c(b_qmd, b_baph, b_tph, b_dia, b_ht, b_HD, b_slope, b_aspect, b_sdi) ~ dnorm(0, 5)
   )
   
+  boot_data$fortypcd = coerce_index(as.factor(boot_data$fortypcd))
+  test_data$fortypcd = coerce_index(as.factor(test_data$fortypcd))
   
   boolFalse <- F
   while(boolFalse == F){
@@ -266,9 +268,9 @@ cross_v <- foreach(p = 1:length(plot_IDs), .packages = c("rethinking", "dplyr"))
         mod1_fit = quap(mod1, data = boot_data) #, start = list(b0=0, b_qmd=0, b_baph=0, b_tph=0, b_dia=0, b_ht=0, b_HD=0, b_slope=0, b_aspect=0, sigma=1))
         lppd_cv = as.data.frame(sum(lppd_newdata(mod1_fit, newdata = test_data)))
         names(lppd_cv)="lppd_cv"
-        r2_boot=median(bayesian_rsq(mod1_fit, boot_data$sqrtcpa))
+        r2_boot=median(bayesian_rsq(mod1_fit, boot_data$cpa))
         names(r2_boot)="r2_boot"
-        r2_out=median(bayesian_rsq_out(mod1_fit, obs = test_data$sqrtcpa, new_values = test_data))
+        r2_out=median(bayesian_rsq_out(mod1_fit, obs = test_data$cpa, new_values = test_data))
         names(r2_out)="r2_out"
         stat=cbind(lppd_cv, r2_boot, r2_out)
         boolFalse <- T
