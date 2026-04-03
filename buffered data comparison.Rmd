@@ -1,0 +1,126 @@
+---
+title: "Buffering data comparison"
+author: "Tara Skiba"
+date: "2026-03-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Comparing raw, public, and buffered public coordinate values (10 buffered with r = 5280 ft)
+
+Using WorldClim Bio data (pixel size: 927.67 m or 3043.537 ft)
+
+```{r library}
+library(readxl)
+library(dplyr)
+library(Metrics)
+library(maditr)
+```
+ ## Splitting dataset of 10 buffered coordinates to run through *skiba*
+```{r}
+
+point.split <- read.csv("5280.0ft.csv")
+28780/2 # end of 51_165_93
+point.split.1 <- point.split[1:14390,]
+point.split.2 <- point.split[14391:28780,]
+
+write.csv(point.split.1, "split1.csv")
+write.csv(point.split.2, "split2.csv")
+```
+
+```{r datafiles}
+raw <- read.csv("WORLDCLIM_V1_BIO_RAW.csv")
+public <- read.csv("WORLDCLIM_V1_BIO_PUBLIC.csv")
+
+split1 <- read.csv("WORLDCLIM_V1_BIO_BUFFER1.csv")
+split2 <- read.csv("WORLDCLIM_V1_BIO_BUFFER2.csv")
+split2 <- split2[,-2]
+buffered <- rbind(split1, split2)
+```
+
+# Data exploration
+
+datasets have different number of rows
+```{r}
+setdiff(buffered$plot_ID, raw$plot_ID)
+setdiff(public$plot_ID, raw$plot_ID)
+setdiff(public$plot_ID, buffered$plot_ID)
+buffered[which(buffered$plot_ID == "39_111_1027"),]
+public[which(public$plot_ID == "39_111_1027"),]
+final_plot_data[which(final_plot_data$plot_ID == "39_111_1027"),]
+raw[which(raw$plot_ID == "39_111_1027"),]
+```
+
+# Difference calcaulations
+```{r}
+set.seed = 123
+variables <- c(colnames(buffered[,-1]))
+
+difference_calculations <- function(dataset, bio_var){
+  
+    percent.diff <- 100*(dataset[,1]-dataset[,2])/dataset[,2] # as a percent
+    percent.diff[sapply(percent.diff, is.infinite)] <- NA
+    percent.diff <- mean(percent.diff, na.rm = T)
+        
+    abs.diff <- abs(dataset[,2]-dataset[,1])
+    abs.diff <- mean(abs.diff, na.rm = T)
+    
+    df <- data.frame(biovar = bio_var, percent.diff = percent.diff, abs.diff = abs.diff)
+    return(df)
+    
+}
+
+data_cleaning <- function(dataset){
+  dataset = dataset[complete.cases(dataset),]
+  dataset = dataset[,order(colnames(dataset))]
+  return(dataset)
+}
+
+differences <- foreach(var = 1:length(variables), .packages = c("dplyr"))%dopar%{
+    var.pub = public[,c(variables[var], "plot_ID")]
+    var.raw = raw[,c(variables[var], "plot_ID")]
+    var.buf = buffered[,c(variables[var], "plot_ID")]
+   
+    # pub/raw (PR)
+    join.pub.raw = merge(var.pub, var.raw, by = "plot_ID")
+    join.pub.raw = data_cleaning(join.buf.raw)
+    # pub/buf (PB)
+    join.pub.buf = merge(var.buf, var.pub, by = "plot_ID")
+    join.pub.buf <- data_cleaning(join.pub.buf)
+    # raw/buf (RB)
+    join.buf.raw = merge(var.buf, var.raw, by = "plot_ID")
+    join.buf.raw <- data_cleaning(join.buf.raw)
+
+    PR <- difference_calculations(join.pub.raw, var)
+    PR$compare = "PR"
+    PB <- difference_calculations(join.pub.buf, var)
+    PB$compare = "PB"
+    RB <- difference_calculations(join.buf.raw, var)
+    RB$compare = "RB"
+    diff <- rbind(PR, PB, RB)
+    
+    return(diff)
+}
+diff.bind <- do.call(rbind, differences)
+diff.bind
+```
+
+## Percent difference
+```{r}
+percent.diff.tab <- diff.bind[,-c(3)]
+percent.diff.tab <- percent.diff.tab %>% 
+  pivot_wider(names_from = compare, values_from = percent.diff)
+clipr::write_clip(percent.diff.tab)
+percent.diff.tab
+```
+## Abs difference
+```{r}
+abs.diff.tab <- diff.bind[,-c(2)]
+abs.diff.tab <- abs.diff.tab %>% 
+  pivot_wider(names_from = compare, values_from = abs.diff)
+clipr::write_clip(abs.diff.tab)
+abs.diff.tab
+```

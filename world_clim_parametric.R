@@ -20,6 +20,8 @@ library(GGally)
 library(tidyr)
 library(tibble)
 library(ggplot2)
+library(gamsel)
+library(mgcv)
 
 beta = 1000 # no. of iterations
 no_cores <- detectCores() - 3
@@ -40,6 +42,13 @@ registerDoParallel(cl)
 final_plot_data <- read.csv("tree_plot_data_final_carbon.csv")
 final_plot_data <- final_plot_data %>% 
   filter(ownership != "New River Gorge")
+final_plot_data$plot_ID <- paste(final_plot_data$STATECD, 
+                                 final_plot_data$COUNTYCD, 
+                                 final_plot_data$PLOT, 
+                                #final_plot_data$SUBP, 
+                                #final_plot_data$CONDID, 
+                                #final_plot_data$TREE,
+                                sep = "_")
 #ownership_index <- unique(final_plot_data$ownership) 
 ownership_index <- c("Chattahoochee-Oconee", "Cherokee", "Nantahala", "Pisgah","George Washington-Jefferson", "Daniel Boone","Monongahela","Wayne","Great Smoky Mountains","Shenandoah")
 
@@ -80,8 +89,8 @@ plot_var <- c("cpa", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
 # ENVIRONMENTAL VARIABLES ####
 ## WORLDCLIM_V1_BIO ####
 
-worldclim <- as.data.frame(read.csv("WORLDCLIM_V1_BIO.csv"))
-worldclim <- worldclim[,-c(20:22, 24)]
+worldclim <- as.data.frame(read.csv("WORLDCLIM_V1_BIO_PUBLIC.csv"))
+#worldclim <- worldclim[,-c(20:22, 24)]
 worldclim <- unique(worldclim)
 worldclim <- worldclim %>%
   group_by(plot_ID) %>%
@@ -101,7 +110,7 @@ env_data$plot_ID <- paste(env_data$STATECD,
                           sep = "_")
 
 # plot_env <- as.data.frame(env_data$plot_ID)
-env_data <- right_join(env_data, worldclim, by = "plot_ID")
+env_data <- left_join(env_data, worldclim, by = "plot_ID")
 
 # tables ####
 env_table_summary <- env_data %>% 
@@ -788,8 +797,8 @@ para_model1 <- bind_rows(para_model1)
 
 # Model fit statistics
 para_model1 <- para_model1[,order(colnames(para_model1))]
-para_model <- para_model1[,-c(1:45)]
-para_model_stats <- para_model  %>% 
+para_model2 <- para_model1[,-c(1:45)]
+para_model_stats <- para_model2  %>% 
   dplyr::group_by(ownership) %>%
   dplyr::summarise_all(.funs = c("low"=~quantile(., probs = 0.025),
                                  "med"=~quantile(., probs = 0.5),
@@ -822,7 +831,7 @@ rand.coeff <- rand.coeff%>%
   dplyr::group_by(ownership) %>% 
   dplyr::summarise_all(.funs = ~quantile(., probs = 0.5, na.rm = T))
 rand.coeff[is.na(rand.coeff)] <- 0
-clipr::write_last_clip()
+clipr::write_clip(rand.coeff)
 
 #### LMER graphs, figures, etc ####
 
@@ -836,9 +845,9 @@ for(i in 1:length(ownership_index)){
   final_plot_data_subset <- final_plot_data %>% 
     dplyr::filter(ownership == ownership_index[own_i])
   region_coeff <- lmer_coeff[own_i,]
-  beta = c("(Intercept)" = region_coeff$X.Intercept._med, aspect = region_coeff$aspect_med, baph = region_coeff$baph_med, mean_actualht = region_coeff$mean_actualht_med, mean_dia = region_coeff$mean_dia_med, mean_HD = region_coeff$mean_HD_med, qmd = region_coeff$qmd_med, sdi = region_coeff$sdi_med, slope = region_coeff$slope_med, tph = region_coeff$tph_med)
+  b = c("(Intercept)" = region_coeff$X.Intercept._med, aspect = region_coeff$aspect_med, baph = region_coeff$baph_med, mean_actualht = region_coeff$mean_actualht_med, mean_dia = region_coeff$mean_dia_med, mean_HD = region_coeff$mean_HD_med, qmd = region_coeff$qmd_med, sdi = region_coeff$sdi_med, slope = region_coeff$slope_med, tph = region_coeff$tph_med)
   X <- model.matrix(~ aspect + baph + mean_actualht + mean_dia+mean_HD+qmd+sdi+slope+tph, data = final_plot_data_subset)
-  lp_fixed <- as.vector(X%*%beta)
+  lp_fixed <- as.vector(X%*%b)
   b_hat <- c(`103`=region_coeff$`103`, `104`=region_coeff$`104`, `105`=region_coeff$`105`, `123`=region_coeff$`123`, `161`=region_coeff$`161`, `162`=region_coeff$`162`, `163`=region_coeff$`163`, `165`=region_coeff$`165`, `167`=region_coeff$`167`, `401`=region_coeff$`401`, `404`=region_coeff$`404`, `405`=region_coeff$`405`, `406`=region_coeff$`406`, `409`=region_coeff$`409`, `501`=region_coeff$`501`, `502`=region_coeff$`502`, `503`=region_coeff$`503`, `504`=region_coeff$`504`, `505`=region_coeff$`505`, `506`=region_coeff$`506`, `507`=region_coeff$`507`, `508`=region_coeff$`508`, `510`=region_coeff$`510`, `511`=region_coeff$`511`, `512`=region_coeff$`512`, `513`=region_coeff$`513`, `514`=region_coeff$`514`, `515`=region_coeff$`515`, `516`=region_coeff$`516`, `517`=region_coeff$`517`, `519`=region_coeff$`519`, `520`=region_coeff$`520`, `608`=region_coeff$`608`, `702`=region_coeff$`702`, `705`=region_coeff$`705`, `706`=region_coeff$`706`, `708`=region_coeff$`708`, `801`=region_coeff$`801`, `802`=region_coeff$`802`, `805`=region_coeff$`805`, `809`=region_coeff$`809`, `901`=region_coeff$`901`, `905`=region_coeff$`905`, `962`=region_coeff$`962`, `991`=region_coeff$`991`)
   b_i <- b_hat[as.character(final_plot_data_subset$fortypcd)]
   b_i[is.na(b_i)] <- 0
@@ -1332,9 +1341,11 @@ clipr::write_last_clip()
 print(lasso_RF_model_stats)
 lasso_RF_model_stats_50_samp <- lasso_RF_model_stats
 
-## BAYESIAN ####
-bayesian_stand <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
+## GAMM ####
+
+gamm_stand <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr", "mgcv")) %:%
   foreach(i= 1:length(ownership_index))%dopar% {
+    
     
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
@@ -1347,12 +1358,56 @@ bayesian_stand <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4
     boot_data <- inner_join(final_plot_data_subset, plot_ind)
     boot_data_test <- anti_join(final_plot_data_subset, boot_data)
     
-    # Run model
+    gamm.mod <- gamm(cpa~s(mean_dia, k = 10) + s(qmd, k = 10) + s(baph, k = 10) + s(mean_actualht, k = 10) + s(mean_HD, k = 10) + s(slope, k = 10) + s(aspect, k = 10) + s(sdi, k = 10) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # ML produces unbiased fixed effects, REML produces unbiased random effects
     
+    AIC <- as.data.frame(AIC(gamm.mod$lme))
+    names(AIC) <- "AIC"
+    R2 <- summary(gamm.mod$gam)$r.sq
+    names(R2) <- "R2"
+    predicted <- predict.gam(gamm.mod$gam, newdata = boot_data, allow.new.levels = TRUE)
+    mb <- as.data.frame(mean(boot_data$cpa - predicted))
+    names(mb) <- "mb"
+    rmse <- as.data.frame(sqrt(mean((boot_data$cpa - predicted)^2)))
+    names(rmse) <- "rmse"
+    
+    predicted_test <- predict.gam(gamm.mod$gam, newdata = boot_data_test, allow.new.levels = TRUE)
+    R2_test <- 1 - (sum((boot_data_test$cpa-predicted_test)^2)/sum((boot_data_test$cpa-mean(boot_data_test$cpa))^2))
+    names(R2_test) <- "R2_test"
+    mb_test <- as.data.frame(mean(boot_data_test$cpa - predicted_test))
+    names(mb_test) <- "mb_test"
+    rmse_test <- as.data.frame(sqrt(mean((boot_data_test$cpa - predicted_test)^2)))
+    names(rmse_test) <- "rmse_test"
+    
+    stat <- cbind(AIC, R2, R2_test, mb, mb_test, rmse, rmse_test)
+    stat$ownership = ownership_index[i]
+    return(stat)
 }
 
 
+gamm_stand1 <- do.call(rbind, gamm_stand)
+gamm_stand1 <- bind_rows(gamm_stand1)
 
+# Model fit statistics
+
+gamm_stand1 <- gamm_stand1[,order(colnames(gamm_stand1))]
+gamm_stand_stats <- gamm_stand1 %>%
+  group_by(ownership) %>% 
+  dplyr::summarise_all(.funs = c("low"=~quantile(., probs = 0.025, na.rm = TRUE),
+                                 "med"=~quantile(., probs = 0.5, na.rm = TRUE),
+                                 "up"=~quantile(., probs = 0.975, na.rm = TRUE)))
+perform <- gamm_stand_stats# %>%
+  #select(matches("r2|mb|rmse|AIC|ownership"))
+perform=perform[,order(colnames(perform))] %>% 
+  select(ownership, everything())
+perform
+clipr::write_last_clip()
+
+coeff <- gamm_stand_stats %>% 
+  select(!matches("r2|mb|rmse"))
+coeff=coeff[,order(colnames(coeff))] %>% 
+  select(ownership, everything())
+coeff
+clipr::write_last_clip()
 
 ## error handling for lambda ####
 ## loop over lambda grid
@@ -1401,7 +1456,7 @@ mixed_Para_stats <- data.frame()
 beta = 1000
 
 
-mixed_para_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
+mixed_para_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr", "mgcv")) %:%
   foreach(i= 1:length(ownership_index))%dopar% { #1:length(ownership_index) # on 7
     
     final_plot_data_subset <- env_data %>% 
@@ -1420,12 +1475,14 @@ mixed_para_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lm
     boot_data_test[, variables] <- scale(boot_data_test[, variables], center=T, scale=T) 
     
     # Run model
-    mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+
-                            qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+    mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
     boot_data$residuals <- resid(mixed_model_1)
     
     model.summary <- summary(mixed_model_1)
     model.coef <- data.frame(t(model.summary$coefficients[,1]))
+    ranef.coef <- data.frame(t(data.frame(ranef(mixed_model_1))[,c(3,4)]))
+    colnames(ranef.coef) <- ranef.coef[1,]
+    ranef.coef <- ranef.coef[-1,]
     random.stddev <- sqrt(model.summary$varcor$fortypcd[1])
     
     #prediction
@@ -1458,8 +1515,7 @@ mixed_para_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lm
     names(aic) <- "AIC"
     
   
-    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, aic, random.stddev)
-    stat <- cbind(stat, model.coef)
+    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, aic, random.stddev, model.coef, ranef.coef)
     stat$ownership <- ownership_index[i]
     
     return(stat)
@@ -1472,11 +1528,14 @@ mixed_para_model1 <- bind_rows(mixed_para_model1)
 
 # Model fit statistics
 
-mixed_para_model_stats <- mixed_para_model1 %>%
+mixed_para_model1 <- mixed_para_model1[,order(colnames(mixed_para_model1))]
+mixed_para_model_stats <- mixed_para_model1[,-c(1:45)]
+mixed_para_model_stats <- mixed_para_model_stats %>%
   group_by(ownership) %>% 
   dplyr::summarise_all(.funs = c("low"=~quantile(., probs = 0.025, na.rm = TRUE),
                                  "med"=~quantile(., probs = 0.5, na.rm = TRUE),
                                  "up"=~quantile(., probs = 0.975, na.rm = TRUE)))
+
 perform <- mixed_para_model_stats %>%
   select(matches("r2|mb|rmse|ownership"))
 perform=perform[,order(colnames(perform))] %>% 
@@ -1491,7 +1550,62 @@ coeff=coeff[,order(colnames(coeff))] %>%
 coeff
 clipr::write_last_clip()
 
+# get random effect coefficients
 
+
+rand.coeff <- mixed_para_model1[,c(1:45, 72)] 
+rand.coeff[,c(1:45)] <- apply(rand.coeff[,c(1:45)], 2, function(x)
+  as.numeric(as.character(x)))
+sapply(rand.coeff, class)
+rand.coeff <- rand.coeff%>% 
+  dplyr::group_by(ownership) %>% 
+  dplyr::summarise_all(.funs = ~quantile(., probs = 0.5, na.rm = T))
+rand.coeff[is.na(rand.coeff)] <- 0
+rand.coeff
+clipr::write_last_clip()
+
+#### LMER graphs, figures, etc ####
+
+lmer_mixed_coeff <- read_xlsx("lmer_stand_env_coefficients.xlsx") %>% 
+  dplyr::select(!matches("low|up|random|aic"))
+
+lmer_test <- env_data[1, c("cpa", env_variables)]
+lmer_test_coef <- lmer_mixed_coeff[1,]
+for ( col in 1:ncol(lmer_test_coef)){
+  colnames(lmer_test_coef)[col] <-  sub("_med*", "", colnames(lmer_test_coef)[col])
+}
+lmer_test_coef <- lmer_test_coef[,1:30]
+lmer_test <- bind_rows(lmer_test, lmer_test_coef)
+
+for(i in 1:length(ownership_index)){
+  own_i = i
+  
+  final_plot_data_subset <- env_data %>% 
+    dplyr::filter(ownership == ownership_index[own_i])
+  region_coeff <- lmer_mixed_coeff[own_i,]
+  b = c("(Intercept)" = region_coeff$X.Intercept._med, aspect = region_coeff$aspect_med, baph = region_coeff$baph_med, mean_actualht = region_coeff$mean_actualht_med, mean_dia = region_coeff$mean_dia_med, mean_HD = region_coeff$mean_HD_med, qmd = region_coeff$qmd_med, sdi = region_coeff$sdi_med, slope = region_coeff$slope_med, tph = region_coeff$tph_med, bio01 = region_coeff$bio01_med, bio02 = region_coeff$bio02_med, bio03 = region_coeff$bio03_med, bio04 = region_coeff$bio04_med, bio05 = region_coeff$bio05_med, bio06 = region_coeff$bio06_med, bio07 = region_coeff$bio07_med, bio08 = region_coeff$bio08_med, bio09 = region_coeff$bio09_med, bio10 = region_coeff$bio10_med, bio11 = region_coeff$bio11_med, bio12 = region_coeff$bio12_med, bio13 = region_coeff$bio13_med, bio14 = region_coeff$bio14_med, bio15 = region_coeff$bio15_med, bio16 = region_coeff$bio16_med, bio17 = region_coeff$bio17_med, bio18 = region_coeff$bio18_med, bio19 = region_coeff$bio19_med)
+  X <- model.matrix(~ aspect + baph + mean_actualht + mean_dia+mean_HD+qmd+sdi+slope+tph+bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19, data = final_plot_data_subset)
+  lp_fixed <- as.vector(X%*%b)
+  b_hat <- c(`103`=region_coeff$`103`, `104`=region_coeff$`104`, `105`=region_coeff$`105`, `123`=region_coeff$`123`, `161`=region_coeff$`161`, `162`=region_coeff$`162`, `163`=region_coeff$`163`, `165`=region_coeff$`165`, `167`=region_coeff$`167`, `401`=region_coeff$`401`, `404`=region_coeff$`404`, `405`=region_coeff$`405`, `406`=region_coeff$`406`, `409`=region_coeff$`409`, `501`=region_coeff$`501`, `502`=region_coeff$`502`, `503`=region_coeff$`503`, `504`=region_coeff$`504`, `505`=region_coeff$`505`, `506`=region_coeff$`506`, `507`=region_coeff$`507`, `508`=region_coeff$`508`, `510`=region_coeff$`510`, `511`=region_coeff$`511`, `512`=region_coeff$`512`, `513`=region_coeff$`513`, `514`=region_coeff$`514`, `515`=region_coeff$`515`, `516`=region_coeff$`516`, `517`=region_coeff$`517`, `519`=region_coeff$`519`, `520`=region_coeff$`520`, `608`=region_coeff$`608`, `702`=region_coeff$`702`, `705`=region_coeff$`705`, `706`=region_coeff$`706`, `708`=region_coeff$`708`, `801`=region_coeff$`801`, `802`=region_coeff$`802`, `805`=region_coeff$`805`, `809`=region_coeff$`809`, `901`=region_coeff$`901`, `905`=region_coeff$`905`, `962`=region_coeff$`962`, `991`=region_coeff$`991`)
+  b_i <- b_hat[as.character(final_plot_data_subset$fortypcd)]
+  b_i[is.na(b_i)] <- 0
+  lp <- lp_fixed + b_i
+  pred <- lp
+  obs <- final_plot_data_subset$cpa
+  
+  fitted <- data.frame(Pred = pred,
+                       Obsv = obs)
+  
+  png(filename = paste0("fit_figures/", ownership_index[own_i], "_stand_env_fit.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  k <- ggplot(fitted, aes(y = Pred, x = Obsv))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") #+ xlim(0, NA) + ylim(0, NA)
+  print(k)
+  dev.off()
+  
+}
 
 ### RF MODEL####
 RF_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
@@ -1635,82 +1749,81 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
     boot_data_test$fortypcd <- factor(boot_data_test$fortypcd)
     boot_data$fortypcd <- factor(boot_data$fortypcd)
     
+
     lambda <- seq(500,0,by=-5)
     family <- gaussian(link = "identity")
     N<-dim(boot_data)[1]
     ind<-sample(N,N)
-    
+
     kk<-5
     nk <- floor(N/kk)
-    
+
     Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
-    
+
     ## first fit good starting model
     PQL <- glmmPQL(cpa~1,random = ~1|fortypcd,family=family,data=boot_data)
-    
+
     Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,20),as.numeric(t(PQL$coef$random$fortypcd)))))
     Q.start <- as.numeric(VarCorr(PQL)[1,1])
 
 
-    ## loop over the folds  
+    ## loop over the folds
     for (k in 1:kk)
     {
       print(paste("CV Loop ", k ,sep=""))
-      
+
       if (k < kk)
       {
         indi <- ind[(k-1)*nk+(1:nk)]
       }else{
         indi <- ind[((k-1)*nk+1):N]
       }
-      
+
       boot_data.train<-boot_data[-indi,]
       boot_data.test<-boot_data[indi,]
-      
+
       Delta.temp <- Delta.start
       Q.temp <- Q.start
-      
+
       ## loop over lambda grid
       for(l in 1:length(lambda))
       {
         #print(paste("Lambda Iteration ", j,sep=""))
-        glm4 <- try(glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11 + 
-                                qmd + baph + mean_dia + mean_actualht + mean_HD + tph + 
-                                slope + aspect + sdi, rnd = list(fortypcd=~1),  
+        glm4 <- try(glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio08+bio09+bio10+bio11 +bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+qmd + baph + mean_dia + mean_actualht + mean_HD + tph +
+                                slope + aspect + sdi, rnd = list(fortypcd=~1),
                               family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
                               control=list(start=Delta.temp[l,],q_start=Q.temp))
-                    ,silent=TRUE) 
-        
-        
+                    ,silent=TRUE)
+
+
         if(!inherits(glm4, "try-error"))
-        {  
-          y.hat<-predict(glm4,boot_data.test)    
+        {
+          y.hat<-predict(glm4,boot_data.test)
           Delta.temp<-rbind(Delta.temp,glm4$Deltamatrix[glm4$conv.step,])
           Q.temp<-c(Q.temp,glm4$Q_long[[glm4$conv.step+1]])
-          
+
           Devianz_ma[l,k]<-sum(family$dev.resids(boot_data.test$cpa,y.hat,wt=rep(1,length(y.hat))))
         }
       }
     }
-    
+
     Devianz_vec<-apply(Devianz_ma,1,sum)
     opt4<-which.min(Devianz_vec)
-    
-    
+
+
 
     ## now fit full model until optimal lambda (which is at opt4)
     for(o in 1:opt4)
-    {  
-      glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11 + 
-                              qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),  
+    {
+      glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio08+bio09+bio10+bio11 +bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),
                             family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE,
                             control=list(start=Delta.start[o,], q_start=Q.start[o]))
       Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
       Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
     }
-    
+
     glm4_final <- glm4.big
-    
+
     summary(glm4_final)
     
     model.summary <- summary(glm4_final)
@@ -1964,6 +2077,72 @@ mixed_lasso_RF_model_stats=mixed_lasso_RF_model_stats[,order(colnames(mixed_lass
 clipr::write_last_clip()
 print(mixed_lasso_RF_model_stats)
 
+## GAMM ####
+
+gamm_all_var <- foreach(1:2, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
+  foreach(i= 1:length(ownership_index))%dopar% {
+    
+    final_plot_data_subset <- env_data %>% 
+      filter(ownership == ownership_index[i])
+    
+    plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+    smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+    plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+    colnames(plot_ind) <- "uniq_spl_unit_id"
+    
+    boot_data <- inner_join(final_plot_data_subset, plot_ind)
+    boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+    
+    gamm.mod <- gamm(cpa~s(mean_dia) + s(qmd) + s(baph) + s(mean_actualht) + s(mean_HD) + s(slope) + s(aspect) + s(sdi) + s(sdi)  + s(bio01) + s(bio02) + s(bio03, k = 2) + s(bio04, k = 2) + s(bio05, k = 2) + s(bio06) + s(bio08) + s(bio09) + s(bio10) + s(bio11) + s(bio12) + s(bio13) + s(bio14) + s(bio15) + s(bio16) + s(bio17) + s(bio18) + s(bio19) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # removed bio07
+    
+    AIC <- as.data.frame(AIC(gamm.mod$lme))
+    names(AIC) <- "AIC"
+    R2 <- summary(gamm.mod$gam)$r.sq
+    names(R2) <- "R2"
+    predicted <- predict.gam(gamm.mod$gam, newdata = boot_data, allow.new.levels = TRUE)
+    mb <- as.data.frame(mean(boot_data$cpa - predicted))
+    names(mb) <- "mb"
+    rmse <- as.data.frame(sqrt(mean((boot_data$cpa - predicted)^2)))
+    names(rmse) <- "rmse"
+    
+    predicted_test <- predict.gam(gamm.mod$gam, newdata = boot_data_test, allow.new.levels = TRUE)
+    R2_test <- 1 - (sum((boot_data_test$cpa-predicted_test)^2)/sum((boot_data_test$cpa-mean(boot_data_test$cpa))^2))
+    names(R2_test) <- "R2_test"
+    mb_test <- as.data.frame(mean(boot_data_test$cpa - predicted_test))
+    names(mb_test) <- "mb_test"
+    rmse_test <- as.data.frame(sqrt(mean((boot_data_test$cpa - predicted_test)^2)))
+    names(rmse_test) <- "rmse_test"
+    
+    stat <- cbind(AIC, R2, R2_test, mb, mb_test, rmse, rmse_test)
+    stat$ownership = ownership_index[i]
+    return(stat)
+  }
+
+
+gamm_all_var1 <- do.call(rbind, gamm_all_var)
+gamm_all_var1 <- bind_rows(gamm_all_var1)
+
+# Model fit statistics
+
+gamm_all_var1 <- gamm_all_var1[,order(colnames(gamm_all_var1))]
+gamm_allvar_stats <- gamm_all_var1 %>%
+  group_by(ownership) %>% 
+  dplyr::summarise_all(.funs = c("low"=~quantile(., probs = 0.025, na.rm = TRUE),
+                                 "med"=~quantile(., probs = 0.5, na.rm = TRUE),
+                                 "up"=~quantile(., probs = 0.975, na.rm = TRUE)))
+perform <- gamm_allvar_stats %>%
+  select(matches("r2|mb|rmse|AIC|ownership"))
+perform=perform[,order(colnames(perform))] %>% 
+  select(ownership, everything())
+perform
+clipr::write_last_clip()
+
+coeff <- gamm_allvar_stats %>% 
+  select(!matches("r2|mb|rmse"))
+coeff=coeff[,order(colnames(coeff))] %>% 
+  select(ownership, everything())
+coeff
+clipr::write_last_clip()
 ## BAYESIAN ####
 
 # Selected coordinates ####
