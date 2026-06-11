@@ -95,8 +95,10 @@ write.csv(selected_coordinates, "selected_coordinates_raw.csv")
 # combine single point buffer and raw coordinates
 single <- read.csv("5280.0ftsingle.csv")
 raw <- read.csv("selected_coordinates_raw.csv")
+raw$lat = raw$SDS_ACTUAL_LAT
+raw$lon = raw$SDS_ACTUAL_LON
 single <- single[,-1]
-raw <- raw[,-1]
+raw <- raw[,-c(1,3,4)]
 combined <- bind_rows(single, raw)
 write.csv(combined, "combined_coordinates.csv")
 

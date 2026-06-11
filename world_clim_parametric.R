@@ -31,7 +31,7 @@ registerDoParallel(cl)
 
 #Complementary file: Data_process_carbon.R
 #Set directory
-#setwd("C:/Users/tara/Desktop/carbon_project_1/")
+#setwd("C:/Users/tara/Desktop/carbon_project_1/dissertation")
 
 # used in conjunction with Data_process_carbon.R
 # dataset to use: final_plot_data
@@ -41,7 +41,7 @@ registerDoParallel(cl)
 # ff_tree3 <- read.csv("ff_tree3.csv")
 final_plot_data <- read.csv("tree_plot_data_final_carbon.csv")
 final_plot_data <- final_plot_data %>% 
-  filter(ownership != "New River Gorge")
+  filter(ownership != "New River Gorge") %>% filter(mean_dia < 40 & cpa < 250) #filter(mean_dia<40 & cpa >100) #
 final_plot_data$plot_ID <- paste(final_plot_data$STATECD, 
                                  final_plot_data$COUNTYCD, 
                                  final_plot_data$PLOT, 
@@ -62,7 +62,7 @@ ggplot(gather(selected_corr_data), aes(value)) +
   facet_wrap(~key, scales = 'free_x')
 #ggpairs(selected_corr_data)
 
-plot_var <- c("cpa", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
+#plot_var <- c("cpa", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
 #gg_data <- final_plot_data[,plot_var]
 #ggpairs(gg_data)
 
@@ -728,7 +728,7 @@ i = 8
 
 para_model <-  foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
   foreach(i= 1:length(ownership_index))%dopar% {
-    
+
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
     
@@ -797,7 +797,8 @@ para_model1 <- bind_rows(para_model1)
 
 # Model fit statistics
 para_model1 <- para_model1[,order(colnames(para_model1))]
-para_model2 <- para_model1[,-c(1:45)]
+
+para_model2 <- para_model1[,-c(1:45)] #45
 para_model_stats <- para_model2  %>% 
   dplyr::group_by(ownership) %>%
   dplyr::summarise_all(.funs = c("low"=~quantile(., probs = 0.025),
@@ -807,8 +808,10 @@ para_model_stats <- para_model2  %>%
 
 perform <- para_model_stats %>%
   select(matches("r2|mb|rmse|ownership"))
-perform=perform[,order(colnames(perform))] %>% 
-  select(ownership, everything())
+performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
+perform=perform[,performance_order] %>% 
+  select(ownership, everything()) %>%
+  slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 print(para_model_stats)
@@ -816,7 +819,8 @@ print(para_model_stats)
 coeff <- para_model_stats %>% 
   select(!matches("r2|mb|rmse"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())
+  select(ownership, everything())%>%
+  slice(match(ownership_index, ownership))
 coeff
 clipr::write_last_clip()
 
@@ -835,6 +839,49 @@ clipr::write_clip(rand.coeff)
 
 #### LMER graphs, figures, etc ####
 
+## using data from loop
+
+for(i in 1:length(ownership_index)){
+  final_plot_data_subset <- env_data %>% 
+    filter(ownership == ownership_index[i])
+  
+  plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+  smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(final_plot_data_subset, plot_ind)
+  boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+  
+  # Run model
+  mixed_model_1 <- lmer(cpa ~ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+  boot_data$residuals <- resid(mixed_model_1)
+  
+  #prediction
+  # prepare the data for ranger
+  variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "aspect", "slope", "sdi")
+  
+  para_data_test <- boot_data_test[, variables]
+  para_data_test$cpa <- boot_data_test$cpa
+  para_data_test_fortypcd <- para_data_test
+  para_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
+  
+  # testing dataset: get predictions
+  predicted_mm_test <- predict(mixed_model_1, newdata = para_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
+  
+  fitting <- data.frame(pred = predicted_mm_test, 
+                        obs = para_data_test$cpa)
+  png(filename = paste0("fit_figures/", ownership_index[i], "_stand_fit.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  print(k)
+  dev.off()
+}
+
+## old method with entire sample
 lmer_coeff <- read_xlsx("stand_only_lmer_coefficients.xlsx") %>% 
   dplyr::select(!matches("low|up|random"))
 
@@ -855,15 +902,14 @@ for(i in 1:length(ownership_index)){
   pred <- lp
   obs <- final_plot_data_subset$cpa
   
-  fitted <- data.frame(Pred = pred,
-                       Obsv = obs)
+  fitted <- cbind(pred, obs)
   
   png(filename = paste0("fit_figures/", ownership_index[own_i], "_stand_fit.png", sep = ""),
       width = 6,
       height = 6,
       units = "in",
       res = 300)
-  k <- ggplot(fitted, aes(y = Pred, x = Obsv))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") #+ xlim(0, NA) + ylim(0, NA)
+  k <- ggplot(fitted, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") #+ xlim(0, NA) + ylim(0, NA)
   print(k)
   dev.off()
 
@@ -972,7 +1018,7 @@ print(RF_stats)
 ## LASSO only ####
 lasso_stats <- data.frame()
 
-lasso_stats <- foreach(loop = 1:2, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "dplyr")) %:%
+lasso_stats <- foreach(loop = 1:beta, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "dplyr")) %:%
   foreach(i= 1:length(ownership_index) )%dopar% {
     
     final_plot_data_subset <- final_plot_data %>% 
@@ -1135,17 +1181,145 @@ var_stats_summary <- lasso_stats1 %>%
                        na.rm = T)
 perform <- var_stats_summary %>%
   select(matches("r2|mb|rmse|ownership"))
-perform=perform[,order(colnames(perform))] %>% 
-  select(ownership, everything())
+performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
+perform=perform[,performance_order] %>% 
+  select(ownership, everything()) %>%
+  slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
 coeff <- var_stats_summary %>% 
   select(!matches("r2|mb|rmse"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())
+  select(ownership, everything()) %>% 
+  slice(match(ownership_index, ownership))
 coeff
 clipr::write_last_clip()
+
+#### graphs ####
+## using data from loop
+
+for(i in 1:length(ownership_index)){
+  final_plot_data_subset <- final_plot_data %>% 
+    filter(ownership == ownership_index[i])
+  columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
+  final_plot_data_subset <- final_plot_data_subset[, columns]
+  variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
+  
+  
+  plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+  smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(final_plot_data_subset, plot_ind)
+  boot_data <- boot_data[,-2]
+  boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+  boot_data_test <- boot_data_test[,-2]
+  
+  ## center all metric variables so that also the 
+  ## starting values with glmmPQL are in the correct scaling
+  boot_data[, variables] <- scale(boot_data[, variables], center=T, scale=T) 
+  boot_data <- data.frame(boot_data)
+  boot_data_test[, variables] <- scale(boot_data_test[, variables], center=T, scale=T) 
+  boot_data_test <- data.frame(boot_data_test)
+  
+  
+  boot_data_test$fortypcd <- factor(boot_data_test$fortypcd)
+  boot_data$fortypcd <- factor(boot_data$fortypcd)
+  
+  lambda <- seq(500,0,by=-5)
+  family <- gaussian(link = "identity")
+  N<-dim(boot_data)[1]
+  ind<-sample(N,N)
+  
+  kk<-5
+  nk <- floor(N/kk)
+  
+  Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
+  
+  ## first fit good starting model
+  PQL <- glmmPQL(cpa~1,random = ~1|fortypcd,family=family,data=boot_data)
+  
+  Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,9),as.numeric(t(PQL$coef$random$fortypcd)))))
+  Q.start <- as.numeric(VarCorr(PQL)[1,1])
+  
+  
+  ## loop over the folds  
+  for (k in 1:kk)
+  {
+    print(paste("CV Loop ", k ,sep=""))
+    
+    if (k < kk)
+    {
+      indi <- ind[(k-1)*nk+(1:nk)]
+    }else{
+      indi <- ind[((k-1)*nk+1):N]
+    }
+    
+    boot_data.train<-boot_data[-indi,]
+    boot_data.test<-boot_data[indi,]
+    
+    Delta.temp <- Delta.start
+    Q.temp <- Q.start
+    
+    
+    ## loop over lambda grid
+    for(l in 1:length(lambda))
+    {
+      glm4 <- try(glmmLasso(cpa ~ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi, rnd = list(fortypcd=~1),  
+                            family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
+                            control=list(start=Delta.temp[l,],q_start=Q.temp[l]))
+                  ,silent=TRUE) 
+      if(!inherits(glm4, "try-error"))
+      {  
+        y.hat<-predict(glm4,boot_data.test)    
+        Delta.temp<-rbind(Delta.temp,glm4$Deltamatrix[glm4$conv.step,])
+        Q.temp<-c(Q.temp,glm4$Q_long[[glm4$conv.step+1]])
+        
+        Devianz_ma[l,k]<-sum(family$dev.resids(boot_data.test$cpa,y.hat,wt=rep(1,length(y.hat))))
+      }
+    }
+  }
+  
+  Devianz_vec<-apply(Devianz_ma,1,sum)
+  opt4<-which.min(Devianz_vec)
+  
+  ## now fit full model until optimal lambda (which is at opt4)
+  for(o in 1:opt4)
+  {  
+    glm4.big <- glmmLasso(cpa ~ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),  
+                          family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE,
+                          control=list(start=Delta.start[o,],q_start=Q.start[o]))
+    Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
+    Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
+    
+  }
+  
+  glm4_final <- glm4.big
+  
+  # prepare the data for ranger
+  variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "aspect", "slope", "sdi")
+  
+  para_data_test <- boot_data_test[, variables]
+  para_data_test$cpa <- boot_data_test$cpa
+  para_data_test_fortypcd <- para_data_test
+  para_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
+  
+  # testing dataset: get predictions
+  predicted_mm_test <- predict(glm4_final, newdata = para_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
+  
+  fitting <- data.frame(pred = predicted_mm_test, 
+                        obs = para_data_test$cpa)
+  png(filename = paste0("stand_lasso_fit_figures/", ownership_index[i], "_stand_lasso_fit.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  print(k)
+  dev.off()
+}
 
 ## LASSO and RF ####
 # is ready to run! :)
@@ -1346,7 +1520,6 @@ lasso_RF_model_stats_50_samp <- lasso_RF_model_stats
 gamm_stand <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr", "mgcv")) %:%
   foreach(i= 1:length(ownership_index))%dopar% {
     
-    
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
     
@@ -1408,6 +1581,49 @@ coeff=coeff[,order(colnames(coeff))] %>%
   select(ownership, everything())
 coeff
 clipr::write_last_clip()
+
+
+#### graphs ####
+## using data from loop
+
+for(i in 1:length(ownership_index)){
+  final_plot_data_subset <- env_data %>% 
+    filter(ownership == ownership_index[i])
+  
+  plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+  smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(final_plot_data_subset, plot_ind)
+  boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+  
+  gamm.mod <- gamm(cpa~s(mean_dia, k = 10) + s(qmd, k = 10) + s(baph, k = 10) + s(mean_actualht, k = 10) + s(mean_HD, k = 10) + s(slope, k = 10) + s(aspect, k = 10) + s(sdi, k = 10) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # ML produces unbiased fixed effects, REML produces unbiased random effects
+  
+  AIC <- as.data.frame(AIC(gamm.mod$lme))
+  names(AIC) <- "AIC"
+  R2 <- summary(gamm.mod$gam)$r.sq
+  names(R2) <- "R2"
+  predicted <- predict.gam(gamm.mod$gam, newdata = boot_data, allow.new.levels = TRUE)
+  mb <- as.data.frame(mean(boot_data$cpa - predicted))
+  names(mb) <- "mb"
+  rmse <- as.data.frame(sqrt(mean((boot_data$cpa - predicted)^2)))
+  names(rmse) <- "rmse"
+  
+  predicted_test <- predict.gam(gamm.mod$gam, newdata = boot_data_test, allow.new.levels = TRUE)
+  
+  fitting <- data.frame(pred = predicted_test, 
+                        obs = boot_data_test$cpa)
+  png(filename = paste0("stand_gamm_fit_figures/", ownership_index[i], "_stand_gamm_fit.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  print(k)
+  dev.off()
+}
+
 
 ## error handling for lambda ####
 ## loop over lambda grid
@@ -1538,8 +1754,10 @@ mixed_para_model_stats <- mixed_para_model_stats %>%
 
 perform <- mixed_para_model_stats %>%
   select(matches("r2|mb|rmse|ownership"))
-perform=perform[,order(colnames(perform))] %>% 
-  select(ownership, everything())
+performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
+perform=perform[,performance_order] %>% 
+  select(ownership, everything()) %>%
+  slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
@@ -1565,6 +1783,49 @@ rand.coeff
 clipr::write_last_clip()
 
 #### LMER graphs, figures, etc ####
+
+## using data from loop
+
+for(i in 1:length(ownership_index)){
+  final_plot_data_subset <- env_data %>% 
+    filter(ownership == ownership_index[i])
+  
+  plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+  smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  variables <- env_variables
+  
+  boot_data <- inner_join(final_plot_data_subset, plot_ind)
+  boot_data[, variables] <- scale(boot_data[, variables], center=T, scale=T) 
+  boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+  boot_data_test[, variables] <- scale(boot_data_test[, variables], center=T, scale=T) 
+  
+  # Run model
+  mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+
+  para_data_test <- boot_data_test[, variables]
+  para_data_test$cpa <- boot_data_test$cpa
+  para_data_test_fortypcd <- para_data_test
+  para_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
+  
+  # testing dataset: get predictions
+  predicted_mm_test <- predict(mixed_model_1, newdata = para_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
+  
+  fitting <- data.frame(pred = predicted_mm_test, 
+                        obs = para_data_test$cpa)
+  png(filename = paste0("stand_env_fit_figures/", ownership_index[i], "_stand_env_fit.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  print(k)
+  dev.off()
+}
+
+## old methodology
 
 lmer_mixed_coeff <- read_xlsx("lmer_stand_env_coefficients.xlsx") %>% 
   dplyr::select(!matches("low|up|random|aic"))
@@ -1723,7 +1984,7 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
     print(paste("Ownership ", ownership_index[i], ", Loop ", j, sep=""))
-    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi", colnames(worldclim[,-c(1, 13:20)]))
+    columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", env_variables)
     final_plot_data_subset <- final_plot_data_subset[, columns]
     variables <- columns[-c(1:3)]
 
@@ -1817,7 +2078,7 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
     {
       glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio08+bio09+bio10+bio11 +bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),
                             family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE,
-                            control=list(start=Delta.start[o,], q_start=Q.start[o]))
+                            )
       Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
       Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
     }
@@ -1890,6 +2151,134 @@ coeff=coeff[,order(colnames(coeff))] %>%
 coeff
 clipr::write_last_clip()
 
+#### graphs ####
+## using data from loop
+
+for(i in 1:length(ownership_index)){
+  
+  final_plot_data_subset <- env_data %>% 
+    filter(ownership == ownership_index[i])
+  columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", env_variables)
+  final_plot_data_subset <- final_plot_data_subset[, columns]
+  variables <- columns[-c(1:3)]
+  
+  
+  plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+  smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(final_plot_data_subset, plot_ind)
+  boot_data <- boot_data[,-2]
+  boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+  boot_data_test <- boot_data_test[,-2]
+  
+  ## center all metric variables so that also the 
+  ## starting values with glmmPQL are in the correct scaling
+  boot_data[, variables] <- scale(boot_data[, variables], center=T, scale=T) 
+  boot_data <- data.frame(boot_data)
+  boot_data_test[, variables] <- scale(boot_data_test[, variables], center=T, scale=T) 
+  boot_data_test <- data.frame(boot_data_test)
+  
+  
+  boot_data_test$fortypcd <- factor(boot_data_test$fortypcd)
+  boot_data$fortypcd <- factor(boot_data$fortypcd)
+  
+  
+  lambda <- seq(500,0,by=-5)
+  family <- gaussian(link = "identity")
+  N<-dim(boot_data)[1]
+  ind<-sample(N,N)
+  
+  kk<-5
+  nk <- floor(N/kk)
+  
+  Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
+  
+  ## first fit good starting model
+  PQL <- glmmPQL(cpa~1,random = ~1|fortypcd,family=family,data=boot_data)
+  
+  Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,20),as.numeric(t(PQL$coef$random$fortypcd)))))
+  Q.start <- as.numeric(VarCorr(PQL)[1,1])
+  
+  
+  ## loop over the folds
+  for (k in 1:kk)
+  {
+    print(paste("CV Loop ", k ,sep=""))
+    
+    if (k < kk)
+    {
+      indi <- ind[(k-1)*nk+(1:nk)]
+    }else{
+      indi <- ind[((k-1)*nk+1):N]
+    }
+    
+    boot_data.train<-boot_data[-indi,]
+    boot_data.test<-boot_data[indi,]
+    
+    Delta.temp <- Delta.start
+    Q.temp <- Q.start
+    
+    ## loop over lambda grid
+    for(l in 1:length(lambda))
+    {
+      #print(paste("Lambda Iteration ", j,sep=""))
+      glm4 <- try(glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+qmd + baph + mean_dia + mean_actualht + mean_HD + tph +
+                              slope + aspect + sdi, rnd = list(fortypcd=~1),
+                            family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
+                            control=list(start=Delta.temp[l,],q_start=Q.temp))
+                  ,silent=TRUE)
+      
+      
+      if(!inherits(glm4, "try-error"))
+      {
+        y.hat<-predict(glm4,boot_data.test)
+        Delta.temp<-rbind(Delta.temp,glm4$Deltamatrix[glm4$conv.step,])
+        Q.temp<-c(Q.temp,glm4$Q_long[[glm4$conv.step+1]])
+        
+        Devianz_ma[l,k]<-sum(family$dev.resids(boot_data.test$cpa,y.hat,wt=rep(1,length(y.hat))))
+      }
+    }
+  }
+  
+  Devianz_vec<-apply(Devianz_ma,1,sum)
+  opt4<-which.min(Devianz_vec)
+  
+  
+  
+  ## now fit full model until optimal lambda (which is at opt4)
+  for(o in 1:opt4)
+  {
+    glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),
+                          family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE)
+    Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
+    Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
+  }
+  
+  glm4_final <- glm4.big
+
+  para_data_test <- boot_data_test[, variables]
+  para_data_test$cpa <- boot_data_test$cpa
+  para_data_test_fortypcd <- para_data_test
+  para_data_test_fortypcd$fortypcd <- boot_data_test$fortypcd
+  
+  # testing dataset: get predictions
+  predicted_mm_test <- predict(glm4_final, newdata = para_data_test_fortypcd, allow.new.levels = TRUE) # predictions from lme
+  
+  fitting <- data.frame(pred = predicted_mm_test, 
+                        obs = para_data_test$cpa)
+  
+  png(filename = paste0("stand_env_lasso_fit_figures/", ownership_index[i], "_stand_env_lasso_fit.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  print(k)
+  dev.off()
+  
+}
 
 ## LASSO and RF ####
 mixed_lasso_RF_stats <- data.frame()
@@ -2143,7 +2532,7 @@ coeff=coeff[,order(colnames(coeff))] %>%
   select(ownership, everything())
 coeff
 clipr::write_last_clip()
-## BAYESIAN ####
+
 
 # Selected coordinates ####
 raw_coord <- read.csv("ff_cond_coordinates.csv")
