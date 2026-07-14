@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head> </head>
+    <body>
+        <div
+            id="maplegend"
+            class="maplegend"
+            style="
+              bottom: 20px;
+              right: 5px;
+              position: fixed;
+              z-index: 9999;
+              background-color: rgba(255, 255, 255, 0.8);
+              padding: 10px;
+              border-radius: 5px;
+              font-size: 14px;
+            "
+        >
+            <div class="legend-title">National Forests and Parks of Southern Appalachia</div>
+            <div class="legend-scale">
+                <ul class="legend-labels">
+                    <li><span style='background:#006400;opacity:1.0;'></span>Daniel Boone National Forest</li>
+                    <li><span style='background:#ffbb22;opacity:1.0;'></span>Chattahoochee-Oconee National Forests</li>
+                    <li><span style='background:#ffff4c;opacity:1.0;'></span>Cherokee National Forest</li>
+                    <li><span style='background:#f096ff;opacity:1.0;'></span>George Washington and Jefferson National Forest</li>
+                    <li><span style='background:#fa0000;opacity:1.0;'></span>Wayne National Forest</li>
+                    <li><span style='background:#b4b4b4;opacity:1.0;'></span>Monongahela National Forest</li>
+                    <li><span style='background:#f0f0f0;opacity:1.0;'></span>Pisgah National Forest</li>
+                    <li><span style='background:#0064c8;opacity:1.0;'></span>Nantahala National Forest</li>
+                    <li><span style='background:#0096a0;opacity:1.0;'></span>Shenandoah National Park</li>
+                    <li><span style='background:#00cf75;opacity:1.0;'></span>Great Smoky Mountains National Park</li>
+                </ul>
+            </div>
+        </div>
+    </body>
+</html>
+
+<style type="text/css">
+    .maplegend .legend-title {
+        text-align: left;
+        margin-bottom: 5px;
+        font-weight: bold;
+        font-size: 90%;
+    }
+    .maplegend .legend-scale ul {
+        margin: 0;
+        margin-bottom: 5px;
+        padding: 0;
+        float: left;
+        list-style: none;
+    }
+    .maplegend .legend-scale ul li {
+        font-size: 80%;
+        list-style: none;
+        margin-left: 0;
+        line-height: 18px;
+        margin-bottom: 2px;
+    }
+    .maplegend ul.legend-labels li span {
+        display: block;
+        float: left;
+        height: 16px;
+        width: 30px;
+        margin-right: 5px;
+        margin-left: 0;
+        border: 1px solid #999;
+    }
+    .maplegend .legend-source {
+        font-size: 80%;
+        color: #777;
+        clear: both;
+    }
+    .maplegend a {
+        color: #777;
+    }
+</style>

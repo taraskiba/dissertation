@@ -60,6 +60,29 @@ hist_data <- selected_corr_data %>% gather() %>% head()
 ggplot(gather(selected_corr_data), aes(value)) + 
   geom_histogram(bins = 10) + 
   facet_wrap(~key, scales = 'free_x')
+
+letters <- c("(a)","(b)","(c)","(d)","(e)","(f)","(g)","(h)","(i)","(j)")
+
+for(i in 1:length(ownership_index)){
+  paper_data_subset <- final_plot_data %>% 
+    filter(ownership == ownership_index[i])
+  
+  png(filename = paste0("./histograms/", ownership_index[i], "_histogram.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  title <- expression(paste("Total carbon per ha (Mg C/ha)"))
+  k <- ggplot(paper_data_subset, aes(cpa)) + geom_histogram(bins = 30, color="cadetblue4", fill="cadetblue3") + 
+    scale_color_grey() + theme_bw() + labs(x=title, y = "Count", caption = paste0(letters[i], " ", ownership_index[i])) + theme(axis.line = element_line(colour = "black", 
+                                                                                                  linetype = "solid"), plot.caption = element_text(hjust = 0.5, size=rel(1.5)),
+                                                                         axis.text=element_text(size=14),
+                                                                         axis.title=element_text(size=16,face="bold"))
+  print(k)
+  dev.off()
+  
+}
+
 #ggpairs(selected_corr_data)
 
 #plot_var <- c("cpa", "dayl", "prcp", "srad", "swe", "tmax", "tmin", "vp")
@@ -112,6 +135,13 @@ env_data$plot_ID <- paste(env_data$STATECD,
 # plot_env <- as.data.frame(env_data$plot_ID)
 env_data <- left_join(env_data, worldclim, by = "plot_ID")
 
+## ggpairs plot
+ggpairs(env_data[,colnames(worldclim[,-1])])
+dev.off()
+scatter_dataset <- env_data[which(env_data$ownership == "Cherokee"),colnames(worldclim[,-1])]
+plot(scatter_dataset, pch=20, cex=1.5, col='steelblue')
+dev.off()
+
 # tables ####
 env_table_summary <- env_data %>% 
   group_by(ownership) %>% 
@@ -146,15 +176,20 @@ clipr::write_clip(variable_full_summary)
 
 
 # figures ####
-env_data_hist <- env_data[, env_variables]
-hist_data <- env_data_hist %>% gather() %>% head()
-ggplot(gather(env_data_hist), aes(value)) + 
-  geom_histogram(bins = 10) + 
-  facet_wrap(~key, scales = 'free_x')
-ggpairs(env_data_hist)
-
 library(psych)
-corPlot(env_data_hist)#, cex = 1
+
+env_data_hist <- env_data[, env_variables]
+env_data_hist <- env_data[which(env_data$ownership == ownership_index[1]), env_variables]
+hist_data <- env_data_hist %>% gather() %>% head()
+# ggplot(gather(env_data_hist), aes(value)) + 
+#   geom_histogram(bins = 10) + 
+#   facet_wrap(~key, scales = 'free_x')
+#ggpairs(env_data_hist)
+
+corPlot(env_data_hist, show.legend = TRUE)#, cex = 1
+
+dev.off()
+
 summary(env_data_hist)
 env_data_hist %>%
   gather() %>% 
@@ -371,7 +406,7 @@ print(env_RF_stats)
 
 lasso_env_stats <- data.frame()
 
-lasso_env_MODEL <- foreach(1:20, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "ranger", "dplyr")) %:%
+lasso_env_MODEL <- foreach(1:beta, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "ranger", "dplyr")) %:%
   foreach(i= 1:length(ownership_index))%dopar% {
     
     final_plot_data_subset <- env_scaled %>% 
@@ -871,16 +906,17 @@ for(i in 1:length(ownership_index)){
   
   fitting <- data.frame(pred = predicted_mm_test, 
                         obs = para_data_test$cpa)
-  png(filename = paste0("fit_figures/", ownership_index[i], "_stand_fit.png", sep = ""),
+  png(filename = paste0("fit_figures/", letters[i], " ", ownership_index[i], "_stand_fit.png", sep = ""),
       width = 6,
       height = 6,
       units = "in",
       res = 300)
-  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0(letters[i], " ", ownership_index[i])) + theme_bw() +theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14)) #+ theme_bw() #+ xlim(0, NA) + ylim(0, NA)
   print(k)
   dev.off()
 }
 
+print(k)
 ## old method with entire sample
 lmer_coeff <- read_xlsx("stand_only_lmer_coefficients.xlsx") %>% 
   dplyr::select(!matches("low|up|random"))
@@ -1023,7 +1059,7 @@ lasso_stats <- foreach(loop = 1:beta, .errorhandling = 'remove', .packages = c("
     
     final_plot_data_subset <- final_plot_data %>% 
       filter(ownership == ownership_index[i])
-    print(paste("Ownership ", ownership_index[i], "Loop", loop, sep=" "))
+    #print(paste("Ownership ", ownership_index[i], "Loop", loop, sep=" "))
     columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", "qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
     final_plot_data_subset <- final_plot_data_subset[, columns]
     variables <- c("qmd", "baph", "mean_dia", "mean_actualht", "mean_HD", "tph", "slope", "aspect", "sdi")
@@ -1311,12 +1347,12 @@ for(i in 1:length(ownership_index)){
   
   fitting <- data.frame(pred = predicted_mm_test, 
                         obs = para_data_test$cpa)
-  png(filename = paste0("stand_lasso_fit_figures/", ownership_index[i], "_stand_lasso_fit.png", sep = ""),
+  png(filename = paste0("stand_lasso_fit_figures/", letters[i]," ",ownership_index[i], "_stand_lasso_fit.png", sep = ""),
       width = 6,
       height = 6,
       units = "in",
       res = 300)
-  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0(letters[i], " ", ownership_index[i])) + theme_bw() +theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14))#+ xlim(0, NA) + ylim(0, NA)
   print(k)
   dev.off()
 }
@@ -1614,12 +1650,12 @@ for(i in 1:length(ownership_index)){
   
   fitting <- data.frame(pred = predicted_test, 
                         obs = boot_data_test$cpa)
-  png(filename = paste0("stand_gamm_fit_figures/", ownership_index[i], "_stand_gamm_fit.png", sep = ""),
+  png(filename = paste0("stand_gamm_fit_figures/", letters[i], " ", ownership_index[i], "_stand_gamm_fit.png", sep = ""),
       width = 6,
       height = 6,
       units = "in",
       res = 300)
-  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0(letters[i], " ", ownership_index[i])) + theme_bw() + theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14))#+ xlim(0, NA) + ylim(0, NA)
   print(k)
   dev.off()
 }
@@ -1798,9 +1834,7 @@ for(i in 1:length(ownership_index)){
   variables <- env_variables
   
   boot_data <- inner_join(final_plot_data_subset, plot_ind)
-  boot_data[, variables] <- scale(boot_data[, variables], center=T, scale=T) 
   boot_data_test <- anti_join(final_plot_data_subset, boot_data)
-  boot_data_test[, variables] <- scale(boot_data_test[, variables], center=T, scale=T) 
   
   # Run model
   mixed_model_1 <- lmer(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
@@ -1815,12 +1849,12 @@ for(i in 1:length(ownership_index)){
   
   fitting <- data.frame(pred = predicted_mm_test, 
                         obs = para_data_test$cpa)
-  png(filename = paste0("stand_env_fit_figures/", ownership_index[i], "_stand_env_fit.png", sep = ""),
+  png(filename = paste0("stand_env_fit_figures/", letters[i]," ",ownership_index[i], "_stand_env_fit.png", sep = ""),
       width = 6,
       height = 6,
       units = "in",
       res = 300)
-  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0(letters[i], " ", ownership_index[i])) + theme_bw() +theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14))#+ xlim(0, NA) + ylim(0, NA)
   print(k)
   dev.off()
 }
@@ -1983,7 +2017,7 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
     
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
-    print(paste("Ownership ", ownership_index[i], ", Loop ", j, sep=""))
+    #print(paste("Ownership ", ownership_index[i], ", Loop ", j, sep=""))
     columns <- c("cpa", "uniq_spl_unit_id", "fortypcd", env_variables)
     final_plot_data_subset <- final_plot_data_subset[, columns]
     variables <- columns[-c(1:3)]
@@ -2024,7 +2058,7 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
     ## first fit good starting model
     PQL <- glmmPQL(cpa~1,random = ~1|fortypcd,family=family,data=boot_data)
 
-    Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,20),as.numeric(t(PQL$coef$random$fortypcd)))))
+    Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,28),as.numeric(t(PQL$coef$random$fortypcd)))))
     Q.start <- as.numeric(VarCorr(PQL)[1,1])
 
 
@@ -2053,7 +2087,7 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
         glm4 <- try(glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio08+bio09+bio10+bio11 +bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+qmd + baph + mean_dia + mean_actualht + mean_HD + tph +
                                 slope + aspect + sdi, rnd = list(fortypcd=~1),
                               family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
-                              control=list(start=Delta.temp[l,],q_start=Q.temp))
+                              control=list(start=Delta.temp[l,],q_start=Q.temp[l]))
                     ,silent=TRUE)
 
 
@@ -2078,10 +2112,12 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
     {
       glm4.big <- glmmLasso(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio08+bio09+bio10+bio11 +bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+qmd + baph + mean_dia + mean_actualht + mean_HD + tph + aspect + slope + sdi, rnd = list(fortypcd=~1),
                             family = family, data = boot_data, lambda=lambda[o],switch.NR=FALSE,final.re=FALSE,
-                            )
+                            control=list(start=Delta.start[o,],q_start=Q.temp[o]))
       Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
       Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
     }
+    
+
 
     glm4_final <- glm4.big
 
@@ -2139,15 +2175,18 @@ mixed_lasso_summary <- mixed_lasso_stats1 %>%
                        na.rm = T)
 perform <- mixed_lasso_summary %>%
   select(matches("r2|mb|rmse|ownership"))
-perform=perform[,order(colnames(perform))] %>% 
-  select(ownership, everything())
+performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
+perform=perform[,performance_order] %>% 
+  select(ownership, everything()) %>%
+  slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
 coeff <- mixed_lasso_summary %>% 
   select(!matches("r2|mb|rmse"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())
+  select(ownership, everything())%>%
+  slice(match(ownership_index, ownership))
 coeff
 clipr::write_last_clip()
 
@@ -2269,12 +2308,12 @@ for(i in 1:length(ownership_index)){
   fitting <- data.frame(pred = predicted_mm_test, 
                         obs = para_data_test$cpa)
   
-  png(filename = paste0("stand_env_lasso_fit_figures/", ownership_index[i], "_stand_env_lasso_fit.png", sep = ""),
+  png(filename = paste0("stand_env_lasso_fit_figures/", letters[i], " ", ownership_index[i], "_stand_env_lasso_fit.png", sep = ""),
       width = 6,
       height = 6,
       units = "in",
       res = 300)
-  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)") + theme_bw() + geom_smooth(method = "loess",  colour = "red")#+ xlim(0, NA) + ylim(0, NA)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0(letters[i], " ", ownership_index[i])) + theme_bw() +theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14))#+ xlim(0, NA) + ylim(0, NA)
   print(k)
   dev.off()
   
@@ -2468,8 +2507,14 @@ print(mixed_lasso_RF_model_stats)
 
 ## GAMM ####
 
-gamm_all_var <- foreach(1:2, .errorhandling = 'remove', .packages = c("lme4", "ranger", "dplyr")) %:%
-  foreach(i= 1:length(ownership_index))%dopar% {
+library(car)
+
+model_vif <- lm(cpa ~ bio01+bio02+bio03+bio04+bio05+bio06+bio07+bio08+bio09+bio10+bio11+bio12+bio13+bio14+bio15+bio16+bio17+bio18+bio19+ qmd + baph + mean_dia + mean_actualht + mean_HD + tph + slope + aspect + sdi + (1|fortypcd), data = boot_data) #formula is the one you use. For example, H~ D + DI + (1|subplot)
+summary(model_vif)
+vif(model_vif)
+
+gamm_all_var <- foreach(1:beta, .errorhandling = 'remove', .packages = c("mgcv", "ranger", "dplyr")) %:%
+  foreach(i= 10)%dopar% { #
     
     final_plot_data_subset <- env_data %>% 
       filter(ownership == ownership_index[i])
@@ -2482,7 +2527,9 @@ gamm_all_var <- foreach(1:2, .errorhandling = 'remove', .packages = c("lme4", "r
     boot_data <- inner_join(final_plot_data_subset, plot_ind)
     boot_data_test <- anti_join(final_plot_data_subset, boot_data)
     
-    gamm.mod <- gamm(cpa~s(mean_dia) + s(qmd) + s(baph) + s(mean_actualht) + s(mean_HD) + s(slope) + s(aspect) + s(sdi) + s(sdi)  + s(bio01) + s(bio02) + s(bio03, k = 2) + s(bio04, k = 2) + s(bio05, k = 2) + s(bio06) + s(bio08) + s(bio09) + s(bio10) + s(bio11) + s(bio12) + s(bio13) + s(bio14) + s(bio15) + s(bio16) + s(bio17) + s(bio18) + s(bio19) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # removed bio07
+    #gamm.mod <- gamm(cpa~s(mean_dia) + s(qmd) + s(baph) + s(mean_actualht) + s(mean_HD) + s(slope) + s(aspect) + s(sdi) + s(bio01, k = 2) + s(bio02, k = 2) + s(bio03, k = 2)  + s(bio04, k = 2) + s(bio05, k = 2) + s(bio06, k = 2) + s(bio08, k = 2) + s(bio09, k = 2) + s(bio10, k = 2) + s(bio11, k = 2) + s(bio12, k = 2) + s(bio13, k = 2) + s(bio14, k = 2) + s(bio15, k =2)  + s(bio16, k = 2) + s(bio17, k = 2) + s(bio18, k = 2) + s(bio19, k = 2) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # removed bio07
+    # For Shenandoah
+    gamm.mod <- gamm(cpa~s(mean_dia) + s(qmd) + s(baph) + s(mean_actualht) + s(mean_HD) + s(slope) + s(aspect) + s(sdi) + s(bio01, k = 2) + s(bio02, k =2) + s(bio03, k =2) + s(bio04, k =2) + s(bio05, k =2) + s(bio06, k =2) + s(bio08, k =2) + s(bio09, k =2) + s(bio10, k =2) + s(bio12, k =2) + s(bio13, k =2) + s(bio14, k =2) + s(bio15, k =2) + s(bio16, k =2) + s(bio17, k =2) + s(bio18, k =2) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # removed bio07, 11, 19
     
     AIC <- as.data.frame(AIC(gamm.mod$lme))
     names(AIC) <- "AIC"
@@ -2521,8 +2568,10 @@ gamm_allvar_stats <- gamm_all_var1 %>%
                                  "up"=~quantile(., probs = 0.975, na.rm = TRUE)))
 perform <- gamm_allvar_stats %>%
   select(matches("r2|mb|rmse|AIC|ownership"))
-perform=perform[,order(colnames(perform))] %>% 
-  select(ownership, everything())
+performance_order <- c("ownership","R2_med", "R2_low","R2_up", "R2_test_med", "R2_test_low","R2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
+perform=perform[,performance_order] %>% 
+  select(ownership, everything()) %>%
+  slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
@@ -2532,6 +2581,90 @@ coeff=coeff[,order(colnames(coeff))] %>%
   select(ownership, everything())
 coeff
 clipr::write_last_clip()
+
+#### graphs ####
+## using data from loop
+
+for(i in 1:10){ #length(ownership_index)
+  final_plot_data_subset <- env_data %>% 
+    filter(ownership == ownership_index[i])
+  
+  plotIDs <- unique(final_plot_data_subset$uniq_spl_unit_id)
+  smp_size <- floor(0.7*length(plotIDs)) # switch to 0.8 for 80/20 split
+  plot_ind <- as.data.frame(sample(plotIDs, size = smp_size))
+  colnames(plot_ind) <- "uniq_spl_unit_id"
+  
+  boot_data <- inner_join(final_plot_data_subset, plot_ind)
+  boot_data_test <- anti_join(final_plot_data_subset, boot_data)
+  
+  #gamm.mod <- gamm(cpa~s(mean_dia) + s(qmd) + s(baph) + s(mean_actualht) + s(mean_HD) + s(slope) + s(aspect) + s(sdi) + s(bio01, k = 2) + s(bio02, k = 2) + s(bio03, k = 2)  + s(bio04, k = 2) + s(bio05, k = 2) + s(bio06, k = 2) + s(bio08, k = 2) + s(bio09, k = 2) + s(bio10, k = 2) + s(bio11, k = 2) + s(bio12, k = 2) + s(bio13, k = 2) + s(bio14, k = 2) + s(bio15, k =2)  + s(bio16, k = 2) + s(bio17, k = 2) + s(bio18, k = 2) + s(bio19, k = 2) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # removed bio07
+  # For Shenandoah
+  gamm.mod <- gamm(cpa~s(mean_dia) + s(qmd) + s(baph) + s(mean_actualht) + s(mean_HD) + s(slope) + s(aspect) + s(sdi) + s(bio01, k = 2) + s(bio02, k =2) + s(bio03, k =2) + s(bio04, k =2) + s(bio05, k =2) + s(bio06, k =2) + s(bio08, k =2) + s(bio09, k =2) + s(bio10, k =2) + s(bio12, k =2) + s(bio13, k =2) + s(bio14, k =2) + s(bio15, k =2) + s(bio16, k =2) + s(bio17, k =2) + s(bio18, k =2) + s(fortypcd, bs = "re"), data = boot_data, method = "ML") # removed bio07, 11, 19
+  
+  AIC <- as.data.frame(AIC(gamm.mod$lme))
+  names(AIC) <- "AIC"
+  R2 <- summary(gamm.mod$gam)$r.sq
+  names(R2) <- "R2"
+  predicted <- predict.gam(gamm.mod$gam, newdata = boot_data, allow.new.levels = TRUE)
+  mb <- as.data.frame(mean(boot_data$cpa - predicted))
+  names(mb) <- "mb"
+  rmse <- as.data.frame(sqrt(mean((boot_data$cpa - predicted)^2)))
+  names(rmse) <- "rmse"
+  
+  predicted_test <- predict.gam(gamm.mod$gam, newdata = boot_data_test, allow.new.levels = TRUE)
+  
+  fitting <- data.frame(pred = predicted_test, 
+                        obs = boot_data_test$cpa)
+  png(filename = paste0("stand_env_gamm_fit_figures/", letters[i], " ", ownership_index[i], "_stand_env_gamm_fit.png", sep = ""),
+      width = 6,
+      height = 6,
+      units = "in",
+      res = 300)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0(letters[i], " ", ownership_index[i])) + theme_bw() +theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14))#+ xlim(0, NA) + ylim(0, NA)
+  print(k)
+  dev.off()
+}
+
+
+## error handling for lambda ####
+## loop over lambda grid
+for (k in 1:kk)
+{
+  print(paste("CV Loop ", k ,sep=""))
+  
+  if (k < kk)
+  {
+    indi <- ind[(k-1)*nk+(1:nk)]
+  }else{
+    indi <- ind[((k-1)*nk+1):N]
+  }
+  
+  boot_data.train<-boot_data[-indi,]
+  boot_data.test<-boot_data[indi,]
+  
+  Delta.temp <- Delta.start
+  Q.temp <- Q.start
+  
+  ## loop over lambda grid
+  for(l in 1:length(lambda))
+  {
+    #print(paste("Lambda Iteration ", j,sep=""))
+    
+    glm4 <- try(glmmLasso(cpa ~ qmd + baph + mean_dia + mean_actualht + mean_HD + diversity + tph + slope + aspect, rnd = list(fortypcd=~1),  
+                          family = family, data = boot_data.train, lambda=lambda[l],switch.NR=FALSE,final.re=FALSE,
+                          control=list(start=Delta.temp[l,],q_start=Q.temp[l]))
+                ,silent=TRUE) 
+    
+    if(!inherits(glm4, "try-error"))
+    {  
+      y.hat<-predict(glm4,boot_data.test)    
+      Delta.temp<-rbind(Delta.temp,glm4$Deltamatrix[glm4$conv.step,])
+      Q.temp<-c(Q.temp,glm4$Q_long[[glm4$conv.step+1]])
+      
+      Devianz_ma[l,k]<-sum(family$dev.resids(boot_data.test$cpa,y.hat,wt=rep(1,length(y.hat))))
+    }
+  }
+}
 
 
 # Selected coordinates ####

@@ -18,14 +18,31 @@ library(readxl)
 library(dplyr)
 library(Metrics)
 library(maditr)
+library(doParallel)
+library(tidyr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(stats)
+
+no_cores <- detectCores() - 3
+cl <- makeCluster(no_cores, type = "PSOCK")
+registerDoParallel(cl)
 ```
+ ## Splitting dataset of 1 buffered coordinate to run through *skiba*
+```{r}
+
+point.split <- read.csv("5280.0ftsingle.csv")
+
+```
+
  ## Splitting dataset of 10 buffered coordinates to run through *skiba*
 ```{r}
 
-point.split <- read.csv("5280.0ft.csv")
-28780/2 # end of 51_165_93
-point.split.1 <- point.split[1:14390,]
-point.split.2 <- point.split[14391:28780,]
+point.split <- read.csv("5280.0ft10points.csv")
+26940/2 # end of 51_165_93
+point.split.1 <- point.split[1:13470,]
+point.split.2 <- point.split[13470:26940,]
 
 write.csv(point.split.1, "split1.csv")
 write.csv(point.split.2, "split2.csv")
@@ -33,31 +50,30 @@ write.csv(point.split.2, "split2.csv")
 
 ```{r datafiles}
 raw <- read.csv("WORLDCLIM_V1_BIO_RAW.csv")
+
 public <- read.csv("WORLDCLIM_V1_BIO_PUBLIC.csv")
+
+buffer1 <- read.csv("WORLDCLIM_V1_BIO_SINGLE_BUFFER.csv")
+buffer1 <- buffer1[, -c(21,22)]
 
 split1 <- read.csv("WORLDCLIM_V1_BIO_BUFFER1.csv")
 split2 <- read.csv("WORLDCLIM_V1_BIO_BUFFER2.csv")
-split2 <- split2[,-2]
-buffered <- rbind(split1, split2)
-```
+buffer10 <- bind_rows(split1, split2)
 
-# Data exploration
+final_plot_data <- read.csv("tree_plot_data_final_carbon.csv")
+final_plot_data <- final_plot_data %>% 
+  filter(ownership != "New River Gorge")
+final_plot_data$plot_ID <- paste(final_plot_data$STATECD, 
+                                 final_plot_data$COUNTYCD, 
+                                 final_plot_data$PLOT,
+                                sep = "_")
 
-datasets have different number of rows
-```{r}
-setdiff(buffered$plot_ID, raw$plot_ID)
-setdiff(public$plot_ID, raw$plot_ID)
-setdiff(public$plot_ID, buffered$plot_ID)
-buffered[which(buffered$plot_ID == "39_111_1027"),]
-public[which(public$plot_ID == "39_111_1027"),]
-final_plot_data[which(final_plot_data$plot_ID == "39_111_1027"),]
-raw[which(raw$plot_ID == "39_111_1027"),]
 ```
 
 # Difference calcaulations
 ```{r}
 set.seed = 123
-variables <- c(colnames(buffered[,-1]))
+variables <- c(colnames(buffer1[,-20]))
 
 difference_calculations <- function(dataset, bio_var){
   
@@ -82,30 +98,39 @@ data_cleaning <- function(dataset){
 differences <- foreach(var = 1:length(variables), .packages = c("dplyr"))%dopar%{
     var.pub = public[,c(variables[var], "plot_ID")]
     var.raw = raw[,c(variables[var], "plot_ID")]
-    var.buf = buffered[,c(variables[var], "plot_ID")]
+    var.buf1 = buffer1[,c(variables[var], "plot_ID")]
+    var.buf10 = buffer10[,c(variables[var], "plot_ID")]
    
     # pub/raw (PR)
     join.pub.raw = merge(var.pub, var.raw, by = "plot_ID")
-    join.pub.raw = data_cleaning(join.buf.raw)
-    # pub/buf (PB)
-    join.pub.buf = merge(var.buf, var.pub, by = "plot_ID")
-    join.pub.buf <- data_cleaning(join.pub.buf)
-    # raw/buf (RB)
-    join.buf.raw = merge(var.buf, var.raw, by = "plot_ID")
-    join.buf.raw <- data_cleaning(join.buf.raw)
-
+    join.pub.raw = data_cleaning(join.pub.raw)
+    # buf1/raw
+    join.buf1.raw = merge(var.buf1, var.raw, by = "plot_ID")
+    join.buf1.raw = data_cleaning(join.buf1.raw)
+    # buf10/raw
+    join.buf10.raw = merge(var.buf10, var.raw, by = "plot_ID")
+    join.buf10.raw = data_cleaning(join.buf10.raw)
+    #buff10 vs buf1
+    join.buf10.buf1 = merge(var.buf10, var.buf1, by = "plot_ID")
+    join.buf10.buf1 = data_cleaning(join.buf10.buf1)
+    
+    
     PR <- difference_calculations(join.pub.raw, var)
     PR$compare = "PR"
-    PB <- difference_calculations(join.pub.buf, var)
-    PB$compare = "PB"
-    RB <- difference_calculations(join.buf.raw, var)
-    RB$compare = "RB"
-    diff <- rbind(PR, PB, RB)
+    B1R <- difference_calculations(join.buf1.raw, var)
+    B1R$compare = "B1R"
+    B10R <- difference_calculations(join.buf10.raw, var)
+    B10R$compare = "B10R"
+    B10B1 <- difference_calculations(join.buf10.buf1, var)
+    B10B1$compare = "B10B1"
+    
+    diff <- rbind(PR, B1R, B10R, B10B1)
     
     return(diff)
 }
 diff.bind <- do.call(rbind, differences)
 diff.bind
+
 ```
 
 ## Percent difference
@@ -124,3 +149,149 @@ abs.diff.tab <- abs.diff.tab %>%
 clipr::write_clip(abs.diff.tab)
 abs.diff.tab
 ```
+
+# CV and CI for 10-point buffered coordinates.
+```{r}
+buff.nonagg.1 <- read.csv("WORLDCLIM_V1_BIO_BUFFNONAGG1.csv")
+buff.nonagg.2 <- read.csv("WORLDCLIM_V1_BIO_BUFFNONAGG2.csv")
+buff.nonagg <- bind_rows(buff.nonagg.1, buff.nonagg.2)
+summary(buff.nonagg)
+clipr::write_clip(summary(buff.nonagg))
+```
+
+```{r}
+buff.stats <- setNames(data.frame(matrix(ncol = 2, nrow = 0)), c("var", "cv"))
+# buf.stats <- data.frame(matrix(ncol = 2, nrow = 0))
+# x <- c("var", "cv")
+# colnames(buf.stats) <- x
+for(i in 1:length(variables)){
+  data.var <- buff.nonagg %>% 
+    select(c(plot_ID, matches(variables[i]))) %>% 
+    dplyr::group_by(plot_ID) %>% 
+    dplyr::summarise_all(.funs= c("sd"=~sd(.),
+                                 "mean"=~mean(.)),
+                       na.rm = T)
+  data.var$cv = data.var$sd/data.var$mean
+  data.var <- data.var[is.finite(data.var$cv),]
+  cv <- mean(data.var$cv, na.rm = T)*100
+  var <- variables[i]
+  cv.var <- cbind(var,cv)
+  buff.stats <- rbind(buff.stats, cv.var)
+}
+
+buff.stats
+clipr::write_clip(buff.stats)
+```
+
+# Visuals of 10-point buffered approach
+
+```{r}
+
+ggplot(buff.nonagg, aes(x=bio12)) +
+geom_histogram(aes(y=..density..), position="identity", alpha=0.5)+
+geom_density(alpha=0.6)+
+labs(title="bio12 Histogram",x="Annual Precipitation (mm)", y = "Density")+
+theme_classic()
+
+ggplot(buff.nonagg, aes(x=bio15)) +
+geom_histogram(aes(y=..density..), position="identity", alpha=0.5)+
+geom_density(alpha=0.6)+
+labs(title="bio15 Histogram",x="Seasonal Precipitation (cv)", y = "Density")+
+theme_classic()
+```
+
+# Elevation comparison
+
+```{r}
+fia <- read_xlsx("fed forest cond data 04-03-2026 no coor.xlsx") 
+fia$plot_ID <- paste(fia$STATECD, 
+                     fia$COUNTYCD, 
+                     fia$PLOT,
+                     sep = "_")
+fia <- fia %>% group_by(plot_ID) %>% top_n(1, MEASYEAR)
+fia <- unique(fia[,c("plot_ID", "ELEV")])
+dep <- read.csv("USGS_3DEP_1m_raw.csv")
+dep$dep <- dep$first*3.280839895
+dep <- dep[,c("plot_ID", "dep")]
+srtmgl <- read.csv("USGS_SRTMGL1_003_raw.csv") 
+srtmgl$srtmgl <- srtmgl$first*3.280839895
+srtmgl <- srtmgl[,c("plot_ID", "srtmgl")]
+
+elevation <- full_join(dep, srtmgl)
+elevation <- left_join(elevation, fia)
+
+dep_diff <- mean(100*(elevation[,"dep"]-elevation[,"ELEV"])/elevation[,"ELEV"], na.rm = T)
+srtmgl_diff <- mean(100*(elevation[,"srtmgl"]-elevation[,"ELEV"])/elevation[,"ELEV"], na.rm = T)
+
+abs.diff <- abs(elevation[,"srtmgl"]-elevation[,"ELEV"])
+abs.diff <- mean(abs.diff, na.rm = T)
+dep_diff
+print("srtmgl_diff: ")
+srtmgl_diff
+print("abs.diff")
+abs.diff
+```
+```{r}
+require(gridExtra)
+plot1 <- ggplot(elevation, aes(x=ELEV)) + geom_histogram(binwidth=200, color="black", fill="white") + xlab("FIA (ft)") + ylim(0,250) + theme_minimal()
+plot2 <- ggplot(elevation, aes(x=srtmgl)) + geom_histogram(binwidth=200,color="black", fill="white") + xlab("NASA (ft)") + ylim(0,250) + theme_minimal()
+grid.arrange(plot1, plot2, ncol=2, top = textGrob("Distribution of Elevation", gp = gpar(fontsize = 20, font = 3)))
+
+ggplot(elevation, aes(x = ELEV, y = srtmgl)) + geom_point() + labs(title = "Queried vs Recorded Elevation Values") + xlab("FIA (ft)") + ylab("NASA (ft)") + geom_abline(intercept = 0, slope = 1, colour = "red") + theme_bw()
+
+#some outliers are driving the differences up
+
+elevation %>% summarise_at(.vars = c("ELEV", "srtmgl"),
+                           .funs = c(med = ~median(.),
+                                      mean = ~mean(.)))
+
+```
+##  Data pruning of outliers
+```{r}
+# as according to Faraway et al. book
+
+elevation_cleaned <- elevation
+elevation_cleaned$abs_diff = abs(elevation_cleaned$srtmgl-elevation_cleaned$ELEV)
+summary(elevation_cleaned$abs_diff)
+precleaned_elevation_plot = plot(elevation_cleaned$abs_diff)
+length(elevation_cleaned$abs_diff)
+
+#remove outliers greater than 3000 - too conservative - only removed 2
+#remove outliers greater than 2000 - too conservative
+elevation_cleaned <- elevation_cleaned %>% 
+  filter(abs_diff < 2000)
+cleaned_elevation_plot = plot(elevation_cleaned$abs_diff)
+
+
+length(elevation_cleaned)
+
+# continuing to filter the data set to include abs diff less than 300 (the 3rd quartile), the values were only reduced to % diff of 1.652476 and abs diff of 119.9826 ft
+```
+
+## refit statistics
+```{r}
+
+srtmgl_diff2 <- mean(100*(elevation_cleaned[,"srtmgl"]-elevation_cleaned[,"ELEV"])/elevation_cleaned[,"ELEV"], na.rm = T)
+
+abs.diff2 <- abs(elevation_cleaned[,"srtmgl"]-elevation_cleaned[,"ELEV"])
+abs.diff2 <- mean(abs.diff2, na.rm = T)
+
+srtmgl_diff2
+abs.diff2
+
+```
+
+## fit as model for fun
+```{r}
+model1 <- lm(ELEV ~ srtmgl, data = elevation)
+summary(model1)
+plot(model1)
+
+model2 <- lm(ELEV ~ srtmgl, data = elevation_cleaned)
+summary(model2)
+plot(model2)
+
+cor(elevation$srtmgl, elevation$ELEV)
+cor(elevation_cleaned$srtmgl, elevation_cleaned$ELEV)
+```
+keep all points in. 1-to-1 plot and correlation coefficient. don't include data cleaning

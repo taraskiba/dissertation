@@ -10,7 +10,7 @@ setwd("C:/Users/tara/Desktop/carbon_project_1/dissertation/ch2")
 #paper_data <- read.csv("tree_plot_data_revision.csv") %>% 
 #  filter(ownership != "New River Gorge")
 paper_data <- final_plot_data
-forest_type_code <- read.csv("forest_type_codes.csv") %>% 
+forest_type_code <- read.csv("./dissertation/ch2/forest_type_codes.csv") %>% 
   select(-"Group.Code") %>% 
   rename(fortypcd = Code)
 
