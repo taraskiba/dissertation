@@ -1,6 +1,5 @@
 #Load packages ####
 
-set.seed(123)
 library(MASS);library(nlme);library(glmmLasso);library(ggplot2)
 library(dplyr)
 library(readxl)
@@ -27,11 +26,11 @@ beta = 1000 # no. of iterations
 no_cores <- detectCores() - 3
 cl <- makeCluster(no_cores, type = "PSOCK")
 registerDoParallel(cl)
-#set.seed(123)
+set.seed(123)
 
 #Complementary file: Data_process_carbon.R
 #Set directory
-#setwd("C:/Users/tara/Desktop/carbon_project_1/dissertation")
+# setwd("C:/Users/tara/Desktop/carbon_project_1/dissertation")
 
 # used in conjunction with Data_process_carbon.R
 # dataset to use: final_plot_data
@@ -41,7 +40,7 @@ registerDoParallel(cl)
 # ff_tree3 <- read.csv("ff_tree3.csv")
 final_plot_data <- read.csv("tree_plot_data_final_carbon.csv")
 final_plot_data <- final_plot_data %>% 
-  filter(ownership != "New River Gorge") %>% filter(mean_dia < 40 & cpa < 250) #filter(mean_dia<40 & cpa >100) #
+  filter(ownership != "New River Gorge") %>% filter(mean_dia < 40 | cpa > 100) #filter(mean_dia<40 & cpa >100) #
 final_plot_data$plot_ID <- paste(final_plot_data$STATECD, 
                                  final_plot_data$COUNTYCD, 
                                  final_plot_data$PLOT, 
@@ -143,9 +142,10 @@ plot(scatter_dataset, pch=20, cex=1.5, col='steelblue')
 dev.off()
 
 # tables ####
+env_cpa_var <- c("cpa", env_variables)
 env_table_summary <- env_data %>% 
   group_by(ownership) %>% 
-  summarise_at(.vars = env_variables,
+  summarise_at(.vars = env_cpa_var,  ## add cpa
                .funs = c(~quantile(., probs = 0.5),
                          ~sd(.)),
                na.rm = T)
@@ -157,9 +157,9 @@ env_table_summary <- env_table_summary[-1, ]
 
 variable_full_summary <- data.frame()
 
-for(i in 1:length(env_variables)){
+for(i in 1:length(env_cpa_var)){
   print(i)
-  temp = env_variables[i]
+  temp = env_cpa_var[i]
   variable <- env_table_summary[grep(c(temp), rownames(env_table_summary)), ]
   mean <- variable[grep("quantile", rownames(variable)), ]
   sd <- variable[grep("_sd", rownames(variable)), ]
@@ -172,9 +172,10 @@ for(i in 1:length(env_variables)){
 
 colnames(variable_full_summary) <- colnames(env_table_summary)
 variable_full_summary <-variable_full_summary[,c(ownership_index)]
+variable_full_summary
 clipr::write_clip(variable_full_summary)
 
-
+ 
 # figures ####
 library(psych)
 
@@ -812,7 +813,7 @@ para_model <-  foreach(1:beta, .errorhandling = 'remove', .packages = c("lme4", 
     names(mb_test) <- "mb_test"
     rmse_test <- as.data.frame(sqrt(mean((para_data_test$cpa - predicted_mm_test)^2, na.rm = T)))
     names(rmse_test) <- "rmse_test"
-    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
+    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(para_data_test$cpa))^2))
     names(r2_test) <- "r2_test"
     aic <- AIC(mixed_model_1)
     names(aic) <- "AIC"
@@ -842,20 +843,20 @@ para_model_stats <- para_model2  %>%
                        na.rm = T)
 
 perform <- para_model_stats %>%
-  select(matches("r2|mb|rmse|ownership"))
+  dplyr::select(matches("r2|mb|rmse|ownership"))
 performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
 perform=perform[,performance_order] %>% 
-  select(ownership, everything()) %>%
+  dplyr::select(ownership, everything()) %>%
   slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
-print(para_model_stats)
+
 
 coeff <- para_model_stats %>% 
-  select(!matches("r2|mb|rmse"))
+  dplyr::select(!matches("r2|mb|rmse|low|up|aic"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())%>%
-  slice(match(ownership_index, ownership))
+  dplyr::select(ownership, everything())%>%
+  dplyr::slice(match(ownership_index, ownership))
 coeff
 clipr::write_last_clip()
 
@@ -906,12 +907,12 @@ for(i in 1:length(ownership_index)){
   
   fitting <- data.frame(pred = predicted_mm_test, 
                         obs = para_data_test$cpa)
-  png(filename = paste0("fit_figures/", letters[i], " ", ownership_index[i], "_stand_fit.png", sep = ""),
+  png(filename = paste0("stand_fit_figures/", letters[i], " ", ownership_index[i], "_stand_fit.png", sep = ""),
       width = 6,
       height = 6,
       units = "in",
       res = 300)
-  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0(letters[i], " ", ownership_index[i])) + theme_bw() +theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14)) #+ theme_bw() #+ xlim(0, NA) + ylim(0, NA)
+  k <- ggplot(fitting, aes(y = pred, x = obs))+geom_point()+geom_abline(intercept = 0, slope = 1, color = "cornflowerblue") + geom_smooth(method = "loess",  colour = "red") + labs(x = "Observed C (Mg C/ha)", y = "Predicted C (Mg C/ha)", caption = paste0("(", letters[i], ") ", ownership_index[i])) + theme_bw() +theme(plot.caption = element_text(hjust = 0.5, size=rel(1.5)), axis.title = element_text(size = 14)) #+ theme_bw() #+ xlim(0, NA) + ylim(0, NA)
   print(k)
   dev.off()
 }
@@ -1055,7 +1056,7 @@ print(RF_stats)
 lasso_stats <- data.frame()
 
 lasso_stats <- foreach(loop = 1:beta, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "dplyr")) %:%
-  foreach(i= 1:length(ownership_index) )%dopar% {
+  foreach(i= 2:length(ownership_index) )%dopar% {
     
     final_plot_data_subset <- final_plot_data %>% 
       filter(ownership == ownership_index[i])
@@ -1193,11 +1194,13 @@ lasso_stats <- foreach(loop = 1:beta, .errorhandling = 'remove', .packages = c("
     names(mb_test) <- "mb_test"
     rmse_test <- as.data.frame(sqrt(mean((para_data_test$cpa - predicted_mm_test)^2, na.rm = T)))
     names(rmse_test) <- "rmse_test"
-    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
+    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(para_data_test$cpa))^2))
     names(r2_test) <- "r2_test"
+    lambdavalue <- as.data.frame(lambda[opt4])
+    names(lambdavalue) <- "lambda"
     
     
-    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, random.stddev)
+    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, random.stddev, lambdavalue)
     stat <- cbind(stat, model.coef)
     stat$ownership = ownership_index[i]
     
@@ -1216,20 +1219,26 @@ var_stats_summary <- lasso_stats1 %>%
                                  "up"=~quantile(., probs = 0.975)),
                        na.rm = T)
 perform <- var_stats_summary %>%
-  select(matches("r2|mb|rmse|ownership"))
+  dplyr::select(matches("r2|mb|rmse|ownership"))
 performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
 perform=perform[,performance_order] %>% 
-  select(ownership, everything()) %>%
-  slice(match(ownership_index, ownership))
+  dplyr::select(ownership, everything()) %>%
+  dplyr::slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
 coeff <- var_stats_summary %>% 
-  select(!matches("r2|mb|rmse"))
+  dplyr::select(!matches("r2|mb|rmse|lambda"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything()) %>% 
-  slice(match(ownership_index, ownership))
+  dplyr::select(ownership, everything()) %>% 
+  dplyr::slice(match(ownership_index, ownership))
 coeff
+clipr::write_last_clip()
+
+s_lambda <- var_stats_summary %>% 
+  dplyr::select(matches("ownership|lambda"))%>% 
+  slice(match(ownership_index, ownership))
+s_lambda
 clipr::write_last_clip()
 
 #### graphs ####
@@ -1604,17 +1613,19 @@ gamm_stand_stats <- gamm_stand1 %>%
   dplyr::summarise_all(.funs = c("low"=~quantile(., probs = 0.025, na.rm = TRUE),
                                  "med"=~quantile(., probs = 0.5, na.rm = TRUE),
                                  "up"=~quantile(., probs = 0.975, na.rm = TRUE)))
-perform <- gamm_stand_stats# %>%
-  #select(matches("r2|mb|rmse|AIC|ownership"))
-perform=perform[,order(colnames(perform))] %>% 
-  select(ownership, everything())
+perform <- gamm_stand_stats %>%
+  dplyr::select(matches("r2|mb|rmse|ownership"))
+performance_order <- c("ownership","R2_med", "R2_low","R2_up", "R2_test_med", "R2_test_low","R2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
+perform=perform[,performance_order] %>% 
+  dplyr::select(ownership, everything()) %>%
+  dplyr::slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
 coeff <- gamm_stand_stats %>% 
-  select(!matches("r2|mb|rmse"))
+  dplyr::select(!matches("r2|mb|rmse"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())
+  dplyr::select(ownership, everything())
 coeff
 clipr::write_last_clip()
 
@@ -1761,7 +1772,7 @@ mixed_para_model <- foreach(1:beta, .errorhandling = 'remove', .packages = c("lm
     names(mb_test) <- "mb_test"
     rmse_test <- as.data.frame(sqrt(mean((para_data_test$cpa - predicted_mm_test)^2, na.rm = T)))
     names(rmse_test) <- "rmse_test"
-    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
+    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(para_data_test$cpa))^2))
     names(r2_test) <- "r2_test"
     aic <- AIC(mixed_model_1)
     names(aic) <- "AIC"
@@ -1789,18 +1800,18 @@ mixed_para_model_stats <- mixed_para_model_stats %>%
                                  "up"=~quantile(., probs = 0.975, na.rm = TRUE)))
 
 perform <- mixed_para_model_stats %>%
-  select(matches("r2|mb|rmse|ownership"))
+  dplyr::select(matches("r2|mb|rmse|ownership"))
 performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
 perform=perform[,performance_order] %>% 
-  select(ownership, everything()) %>%
-  slice(match(ownership_index, ownership))
+  dplyr::select(ownership, everything()) %>%
+  dplyr::slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
 coeff <- mixed_para_model_stats %>% 
-  select(!matches("r2|mb|rmse"))
+  dplyr::select(!matches("r2|mb|rmse|aic|low|up"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())
+  dplyr::select(ownership, everything())
 coeff
 clipr::write_last_clip()
 
@@ -2012,7 +2023,7 @@ Mixed_lasso_stats <- data.frame()
 
 
 mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = c("MASS", "nlme", "glmmLasso", "dplyr")) %:%
-  foreach(i= 1:length(ownership_index))%dopar% { #
+  foreach(i= 1:10)%dopar% { #
     
     
     final_plot_data_subset <- env_data %>% 
@@ -2150,11 +2161,13 @@ mixed_lasso_stats <- foreach(j = 1:beta, .errorhandling = 'remove', .packages = 
     names(mb_test) <- "mb_test"
     rmse_test <- as.data.frame(sqrt(mean((para_data_test$cpa - predicted_mm_test)^2, na.rm = T)))
     names(rmse_test) <- "rmse_test"
-    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(predicted_mm_test))^2))
+    r2_test <- 1 - (sum((para_data_test$cpa-predicted_mm_test)^2)/sum((para_data_test$cpa-mean(para_data_test$cpa))^2))
     names(r2_test) <- "r2_test"
+    lambdavalue <- as.data.frame(lambda[opt4])
+    names(lambdavalue) <- "lambda"
     
     
-    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, random.stddev)
+    stat <- cbind(mb, rmse, r2, mb_test, rmse_test, r2_test, random.stddev, lambdavalue)
     stat <- cbind(stat, model.coef)
     stat$ownership = ownership_index[i]
     
@@ -2166,6 +2179,7 @@ mixed_lasso_stats1 <- do.call(rbind, mixed_lasso_stats)
 mixed_lasso_stats1 <- bind_rows(mixed_lasso_stats1)
 #mixed_lasso_stats1 <- do.call(rbind, mixed_lasso_stats1)
 
+#mixed_lasso_stats_notfull #<- mixed_lasso_stats1
 
 mixed_lasso_summary <- mixed_lasso_stats1 %>%
   group_by(ownership) %>% 
@@ -2174,20 +2188,26 @@ mixed_lasso_summary <- mixed_lasso_stats1 %>%
                                  "up"=~quantile(., probs = 0.975)),
                        na.rm = T)
 perform <- mixed_lasso_summary %>%
-  select(matches("r2|mb|rmse|ownership"))
+  dplyr::select(matches("r2|mb|rmse|ownership"))
 performance_order <- c("ownership","r2_med", "r2_low","r2_up", "r2_test_med", "r2_test_low","r2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
 perform=perform[,performance_order] %>% 
-  select(ownership, everything()) %>%
-  slice(match(ownership_index, ownership))
+  dplyr::select(ownership, everything()) %>%
+  dplyr::slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
 coeff <- mixed_lasso_summary %>% 
-  select(!matches("r2|mb|rmse"))
+  dplyr::select(!matches("r2|mb|rmse|low|up"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())%>%
-  slice(match(ownership_index, ownership))
+  dplyr::select(ownership, everything()) %>%
+  dplyr::slice(match(ownership_index, ownership))
 coeff
+clipr::write_last_clip()
+
+se_lambda <- mixed_lasso_summary %>% 
+  dplyr::select(matches("ownership|lambda")) %>%
+  dplyr::slice(match(ownership_index, ownership))
+se_lambda
 clipr::write_last_clip()
 
 #### graphs ####
@@ -2567,18 +2587,18 @@ gamm_allvar_stats <- gamm_all_var1 %>%
                                  "med"=~quantile(., probs = 0.5, na.rm = TRUE),
                                  "up"=~quantile(., probs = 0.975, na.rm = TRUE)))
 perform <- gamm_allvar_stats %>%
-  select(matches("r2|mb|rmse|AIC|ownership"))
+  dplyr::select(matches("r2|mb|rmse|AIC|ownership"))
 performance_order <- c("ownership","R2_med", "R2_low","R2_up", "R2_test_med", "R2_test_low","R2_test_up","mb_med","mb_low","mb_up","mb_test_med","mb_test_low","mb_test_up","rmse_med", "rmse_low", "rmse_up", "rmse_test_med", "rmse_test_low", "rmse_test_up")
 perform=perform[,performance_order] %>% 
-  select(ownership, everything()) %>%
+  dplyr::select(ownership, everything()) %>%
   slice(match(ownership_index, ownership))
 perform
 clipr::write_last_clip()
 
 coeff <- gamm_allvar_stats %>% 
-  select(!matches("r2|mb|rmse"))
+  dplyr::select(!matches("r2|mb|rmse"))
 coeff=coeff[,order(colnames(coeff))] %>% 
-  select(ownership, everything())
+  dplyr::select(ownership, everything())
 coeff
 clipr::write_last_clip()
 
